@@ -1,0 +1,67 @@
+{
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "ai-proxy",
+      "server": "YOUR_GRAY_CLOUD_DOMAIN_OR_VM_IP",
+      "server_port": 47370,
+      "uuid": "YOUR_UUID",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "apple.com",
+        "insecure": false,
+        "reality": {
+          "enabled": true,
+          "public_key": "YOUR_REALITY_PUBLIC_KEY",
+          "short_id": "YOUR_REALITY_SHORT_ID"
+        },
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "connect_timeout": "15s",
+      "tcp_fast_open": false,
+      "tcp_keep_alive": "1m",
+      "tcp_keep_alive_interval": "30s"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "rules": [
+      {
+        "domain_suffix": [
+          "openai.com",
+          "chatgpt.com",
+          "oaistatic.com",
+          "oaiusercontent.com",
+          "anthropic.com",
+          "claude.ai",
+          "generativelanguage.googleapis.com",
+          "gemini.google.com",
+          "aistudio.google.com",
+          "cursor.sh",
+          "anysphere.co"
+        ],
+        "action": "route",
+        "outbound": "ai-proxy"
+      },
+      {
+        "domain_suffix": [
+          "cn"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "action": "route",
+        "outbound": "direct"
+      }
+    ]
+  }
+}

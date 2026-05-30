@@ -1,0 +1,31 @@
+# Secrets and local runtime artifacts
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+account.conf
+credentials.json
+service-account*.json
+
+# Generated backups and runtime state
+*.bak
+*.bak.*
+state
+*.log
+logs/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Python/cache noise
+__pycache__/
+*.pyc
+.pytest_cache/
