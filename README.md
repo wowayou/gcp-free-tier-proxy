@@ -43,6 +43,7 @@
 | `install-egress-guard.sh` | VM | 安装 180 GiB/月出站流量熔断器 |
 | `issue-acme-cloudflare-token.sh` | VM | 使用 Cloudflare API Token 申请/安装证书 |
 | `add-vless-tls-inbound.sh` | VM | 在现有 sing-box 配置里新增 `VLESS TCP+TLS` 入站 |
+| `export-vless-links.sh` | VM | 只读导出 `vless://` 分享链接和本地订阅内容 |
 | `verify-singbox-runtime.sh` | VM | 只读诊断 sing-box、端口、证书、熔断器 |
 | `sing-box-client-ai-routing.fragment.json` | 本地客户端 | AI 分流模板 |
 | `sing-box-client-vless-tls.fragment.json` | 本地客户端 | VLESS TLS 节点模板 |
@@ -90,6 +91,7 @@ gcloud compute ssh "$VM_NAME" \
 gcloud compute scp \
   gcp-free-tier-proxy/install-egress-guard.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
+  gcp-free-tier-proxy/export-vless-links.sh \
   gcp-free-tier-proxy/verify-singbox-runtime.sh \
   "$VM_NAME":/tmp/ \
   --zone "$ZONE" \
@@ -104,6 +106,33 @@ sudo LIMIT_GIB=180 SERVICE_NAME=sing-box bash /tmp/install-egress-guard.sh
 sudo bash /tmp/add-vless-tls-inbound.sh
 sudo bash /tmp/verify-singbox-runtime.sh
 ```
+
+## 查看客户端分享链接
+
+当前项目不运行订阅面板，也不额外暴露 HTTP 订阅服务。推荐在 VM 上只读导出
+`vless://` 分享链接，然后导入 v2rayN / sing-box 客户端。
+
+Reality 服务端配置通常只保存 private key，不保存客户端需要的 public key。查看 Reality
+分享链接时，把初次部署输出里的 Reality public key 通过环境变量传入：
+
+```bash
+sudo REALITY_PUBLIC_KEY="YOUR_REALITY_PUBLIC_KEY" \
+  REALITY_ADDRESS="YOUR_GRAY_CLOUD_DOMAIN_OR_VM_IP" \
+  bash /tmp/export-vless-links.sh
+```
+
+如果只看 TLS 备用节点，通常不需要传 public key：
+
+```bash
+sudo TLS_ADDRESS="rr.example.com" bash /tmp/export-vless-links.sh
+```
+
+脚本会打印：
+
+- `vless://...` 分享链接。
+- base64 后的本地订阅内容。
+
+这些内容包含 UUID 等客户端凭据，只在自己的终端里查看，不要贴进聊天、Issue 或提交记录。
 
 ## Certificate Notes
 

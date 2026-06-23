@@ -15,6 +15,7 @@ NETWORK="${NETWORK:-default}"
 SUBNET="${SUBNET:-default}"
 PROXY_PORT="${PROXY_PORT:-47370}"
 PROXY_TAG="${PROXY_TAG:-singbox-proxy}"
+PROXY_RULE_NAME="${PROXY_RULE_NAME:-allow-singbox-vless-${PROXY_PORT}}"
 SSH_TAG="${SSH_TAG:-ssh-restricted}"
 
 require_gcloud() {
@@ -44,7 +45,7 @@ echo "Instance: $NAME"
 echo "Network tier: STANDARD"
 echo "Boot disk: $BOOT_DISK_SIZE $BOOT_DISK_TYPE"
 
-ensure_firewall_rule "allow-${PROXY_TAG}-${PROXY_PORT}" \
+ensure_firewall_rule "$PROXY_RULE_NAME" \
   --network "$NETWORK" \
   --direction INGRESS \
   --priority 1000 \

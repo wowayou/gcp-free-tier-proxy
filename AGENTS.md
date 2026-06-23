@@ -65,6 +65,7 @@ VM only:
 - `install-egress-guard.sh`
 - `issue-acme-cloudflare-token.sh`
 - `add-vless-tls-inbound.sh`
+- `export-vless-links.sh`
 - `verify-singbox-runtime.sh`
 - `systemctl`
 - `ss`
@@ -124,6 +125,7 @@ If the check fails, restore the backup.
 - `install-egress-guard.sh`: monthly egress stop/mask guard.
 - `issue-acme-cloudflare-token.sh`: certificate issuance with Cloudflare token.
 - `add-vless-tls-inbound.sh`: append/update VLESS TLS inbound in sing-box config.
+- `export-vless-links.sh`: read-only VM helper that prints VLESS client share links; never persist real output.
 - `verify-singbox-runtime.sh`: read-only runtime diagnostics.
 - `sing-box-client-*.json`: client fragments only; never put real secrets in them.
 

@@ -12,6 +12,20 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
+EXISTING_BUDGET="$(
+  gcloud billing budgets list \
+    --billing-account "$BILLING_ACCOUNT" \
+    --filter "displayName=${DISPLAY_NAME}" \
+    --format "value(name)" 2>/dev/null |
+    head -n1
+)"
+
+if [[ -n "$EXISTING_BUDGET" ]]; then
+  echo "Budget alert already exists: ${DISPLAY_NAME}"
+  echo "Budget resource: ${EXISTING_BUDGET}"
+  exit 0
+fi
+
 gcloud billing budgets create \
   --billing-account "$BILLING_ACCOUNT" \
   --display-name "$DISPLAY_NAME" \

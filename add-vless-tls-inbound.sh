@@ -44,19 +44,43 @@ port_owner() {
   ss -lntp 2>/dev/null | awk -v p=":${port}" '$4 ~ p"$" {print; found=1} END {exit !found}'
 }
 
-pick_tls_port() {
-  if port_owner "$TLS_PORT" >/tmp/vless-tls-port-owner 2>/dev/null; then
-    if grep -q "$SERVICE_NAME" /tmp/vless-tls-port-owner; then
-      echo "$TLS_PORT"
-    else
-      echo "Port ${TLS_PORT} is already in use by:" >&2
-      cat /tmp/vless-tls-port-owner >&2
-      echo "Falling back to ${FALLBACK_TLS_PORT}." >&2
-      echo "$FALLBACK_TLS_PORT"
+port_is_available_or_owned_by_service() {
+  local port="$1"
+  local owner_file="$2"
+
+  if port_owner "$port" >"$owner_file" 2>/dev/null; then
+    if grep -q "$SERVICE_NAME" "$owner_file"; then
+      return 0
     fi
-  else
-    echo "$TLS_PORT"
+
+    return 1
   fi
+
+  return 0
+}
+
+pick_tls_port() {
+  local owner_file="/tmp/vless-tls-port-owner"
+  local fallback_owner_file="/tmp/vless-tls-fallback-port-owner"
+
+  if port_is_available_or_owned_by_service "$TLS_PORT" "$owner_file"; then
+    echo "$TLS_PORT"
+    return
+  fi
+
+  echo "Port ${TLS_PORT} is already in use by:" >&2
+  cat "$owner_file" >&2
+  echo "Checking fallback port ${FALLBACK_TLS_PORT}." >&2
+
+  if port_is_available_or_owned_by_service "$FALLBACK_TLS_PORT" "$fallback_owner_file"; then
+    echo "$FALLBACK_TLS_PORT"
+    return
+  fi
+
+  echo "Fallback port ${FALLBACK_TLS_PORT} is also in use by:" >&2
+  cat "$fallback_owner_file" >&2
+  echo "Set TLS_PORT or FALLBACK_TLS_PORT to an available port." >&2
+  exit 1
 }
 
 detect_domain() {

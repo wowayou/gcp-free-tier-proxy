@@ -57,6 +57,7 @@ Argo、WARP、CDN 回源。
 - `verify-singbox-runtime.sh`：VM 中执行，只读检查 sing-box、端口、熔断器和证书文件。
 - `issue-acme-cloudflare-token.sh`：可选工具，仅给普通 TLS/WS/网页服务申请证书；Reality 不依赖它。
 - `add-vless-tls-inbound.sh`：VM 中执行，在现有 sing-box 配置中新增 `VLESS TCP+TLS` 入站。
+- `export-vless-links.sh`：VM 中执行，只读导出 `vless://` 分享链接和本地订阅内容。
 - `open-vless-tls-port.sh`：Cloud Shell 中执行，开放新增 TLS 入站端口。
 - `sing-box-client-ai-routing.fragment.json`：客户端 sing-box 分流模板。
 - `sing-box-client-vless-tls.fragment.json`：客户端 VLESS TLS 节点模板。
@@ -112,6 +113,7 @@ gcloud compute ssh "$VM_NAME" \
 gcloud compute scp \
   gcp-free-tier-proxy/install-egress-guard.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
+  gcp-free-tier-proxy/export-vless-links.sh \
   gcp-free-tier-proxy/verify-singbox-runtime.sh \
   "$VM_NAME":/tmp/ \
   --zone "$ZONE" \
@@ -180,6 +182,33 @@ sudo journalctl -t gcp-egress-guard -n 50 --no-pager
 ```
 
 ## 客户端配置
+
+### 查看分享链接和订阅内容
+
+本项目没有部署订阅面板，也不建议为了订阅链接额外暴露一个 HTTP 服务。实际维护时使用
+`export-vless-links.sh` 在 VM 本机只读解析 sing-box 配置，打印可导入客户端的分享链接。
+
+Reality 节点需要客户端 public key。服务端配置里通常只有 private key，所以需要从初次部署输出或
+原客户端配置中取回 `Reality public key`：
+
+```bash
+sudo REALITY_PUBLIC_KEY="YOUR_REALITY_PUBLIC_KEY" \
+  REALITY_ADDRESS="YOUR_GRAY_CLOUD_DOMAIN_OR_VM_IP" \
+  bash /tmp/export-vless-links.sh
+```
+
+如果只导出 VLESS TCP+TLS 备用节点：
+
+```bash
+sudo TLS_ADDRESS="rr.example.com" bash /tmp/export-vless-links.sh
+```
+
+输出分两段：
+
+- `VLESS share links`：直接复制 `vless://...` 导入 v2rayN / 类似客户端。
+- `Base64 subscription content`：订阅内容本体，不是可远程访问的订阅 URL。
+
+不要把输出里的 UUID、Reality public key、short id 发到聊天、Issue 或 Git 提交中。
 
 v2rayN / 类似客户端手工填写时，VLESS Reality 主力节点应保持：
 
