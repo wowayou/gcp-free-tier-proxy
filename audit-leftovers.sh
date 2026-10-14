@@ -68,11 +68,32 @@ run gcloud dns managed-zones list \
   --project "$PROJECT_ID" \
   --format "table(name,dnsName,visibility)"
 
+section "Ingress firewall rules"
+run gcloud compute firewall-rules list \
+  --project "$PROJECT_ID" \
+  --filter="direction=INGRESS" \
+  --format="table(name,network.basename(),priority,disabled,sourceRanges.list():label=SOURCE_RANGES,allowed[].map().firewall_rule().list():label=ALLOW,targetTags.list():label=TARGET_TAGS)"
+
+section "Public SSH warning"
+default_ssh="$({
+  gcloud compute firewall-rules describe default-allow-ssh \
+    --project "$PROJECT_ID" \
+    --format="value(disabled,sourceRanges,allowed[].IPProtocol,allowed[].ports)" 2>/dev/null || true
+})"
+if [[ -n "$default_ssh" ]] && grep -qi "false" <<<"$default_ssh" && grep -q "0.0.0.0/0" <<<"$default_ssh"; then
+  echo "[WARN] default-allow-ssh is enabled for 0.0.0.0/0."
+  echo "A second restricted allow rule does not cancel this broad allow rule."
+  echo "Verify IAP access before disabling or deleting the public SSH rule."
+else
+  echo "No enabled default-allow-ssh rule open to 0.0.0.0/0 was detected."
+fi
+
 cat <<'EOF'
 
 Review notes:
 - Delete snapshots and machine images you do not need.
 - Release static external IP addresses whose USERS column is empty.
 - Delete unattached disks unless you intentionally keep them.
+- Prefer IAP for SSH. Verify IAP before changing or removing any existing SSH rule.
 - This script does not delete anything.
 EOF

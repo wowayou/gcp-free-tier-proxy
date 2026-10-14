@@ -1,6 +1,6 @@
 # Google Cloud 免费层 sing-box Reality 节点最终维护手册
 
-更新时间：2026-05-30
+更新时间：2026-10-14
 
 这份手册是当前项目的最终维护口径：只把 Google Cloud 免费层 VM 当作
 **VLESS Reality Vision AI 专用节点** 使用，不做全局代理，不走 Cloudflare 小黄云、
@@ -32,7 +32,7 @@ Argo、WARP、CDN 回源。
 当前不维护为主力节点：
 
 - `Vmess-ws`
-- `Hysteria-2`
+- `Hysteria-2`（仅作为 `443/udp` 并行小流量试验入口）
 - `TUIC-v5`
 - `Anytls`
 
@@ -53,15 +53,21 @@ Argo、WARP、CDN 回源。
 - `open-vless-reality-port.sh`：Cloud Shell 中执行，给 VM 加标签并开放 `tcp:47370`。
 - `create-budget-alert.sh`：Cloud Shell 中执行，创建项目级预算提醒。
 - `audit-leftovers.sh`：Cloud Shell 中执行，只读检查可能继续计费的残留资源。
+- `audit-cost-and-usage.sh`：Cloud Shell 中执行，只读检查账单关联、VM 成本属性、预算和当月发送量。
 - `install-egress-guard.sh`：VM 中执行，安装月度出站流量熔断器。
+- `add-hysteria2-inbound.sh`：VM 中执行，在现有 sing-box 内安全增加 HY2 入站。
 - `verify-singbox-runtime.sh`：VM 中执行，只读检查 sing-box、端口、熔断器和证书文件。
+- `collect-performance-baseline.sh`：VM 中执行，只读采集慢速诊断的主机、进程和网络基线。
 - `issue-acme-cloudflare-token.sh`：可选工具，仅给普通 TLS/WS/网页服务申请证书；Reality 不依赖它。
 - `add-vless-tls-inbound.sh`：VM 中执行，在现有 sing-box 配置中新增 `VLESS TCP+TLS` 入站。
 - `export-vless-links.sh`：VM 中执行，只读导出 `vless://` 分享链接和本地订阅内容。
 - `open-vless-tls-port.sh`：Cloud Shell 中执行，开放新增 TLS 入站端口。
+- `open-hysteria2-port.sh`：Cloud Shell 中执行，按显式来源范围开放 HY2 UDP 端口。
 - `sing-box-client-ai-routing.fragment.json`：客户端 sing-box 分流模板。
 - `sing-box-client-vless-tls.fragment.json`：客户端 VLESS TLS 节点模板。
+- `sing-box-client-hysteria2.fragment.json`：客户端 HY2 模板，不允许跳过证书验证。
 - `CHOOSING-VLESS-NODES.md`：详细说明 Reality、TLS、端口、DNS、防火墙和分流如何选择。
+- `HYSTERIA2-EVALUATION.md`：Reality 慢速诊断和 Hysteria 2 的计费门禁、A/B、验收与回滚方案。
 
 ## Cloud Shell 维护命令
 
@@ -73,6 +79,16 @@ export VM_NAME="YOUR_VM_NAME"
 export ZONE="YOUR_ZONE"
 export PROXY_PORT="47370"
 ```
+
+新建 VM 时优先通过 IAP 管理 SSH：
+
+```bash
+SSH_SOURCE_RANGE="35.235.240.0/20" bash gcp-free-tier-proxy/create-vm-standard-ipv4.sh
+```
+
+脚本对 VM 的 `ssh-restricted` 标签创建优先级 `1000` 的可信来源 allow 和优先级 `1100` 的
+其余来源 deny；后者会覆盖 default VPC 中优先级更低的公网 SSH allow，但不会更改其他 VM。
+现有 VM 先用 `audit-leftovers.sh` 核实规则并验证 IAP 登录，不自动删除项目级规则。
 
 开放 Reality 端口：
 
@@ -91,6 +107,17 @@ TLS_PORT=443 bash gcp-free-tier-proxy/open-vless-tls-port.sh
 ```bash
 TLS_PORT=8443 bash gcp-free-tier-proxy/open-vless-tls-port.sh
 ```
+
+HY2 使用独立的 UDP socket，因此可以与 `443/tcp` 共存。必须先运行
+`audit-cost-and-usage.sh` 并人工核对 Billing Reports，再按朋友的固定出口 IP 限源：
+
+```bash
+CONFIRM_COST_AUDIT=yes SOURCE_RANGES="203.0.113.10/32" \
+  HY2_PORT=443 bash gcp-free-tier-proxy/open-hysteria2-port.sh
+```
+
+如果客户端出口地址动态变化，只能临时用 `SOURCE_RANGES="0.0.0.0/0"`；这不会产生新的
+付费云资源，但会扩大被扫描面，应以独立强密码和试验结束后关闭规则控制风险。
 
 跑通后建议收紧来源 IP，例如：
 
@@ -112,6 +139,7 @@ gcloud compute ssh "$VM_NAME" \
 ```bash
 gcloud compute scp \
   gcp-free-tier-proxy/install-egress-guard.sh \
+  gcp-free-tier-proxy/add-hysteria2-inbound.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
   gcp-free-tier-proxy/export-vless-links.sh \
   gcp-free-tier-proxy/verify-singbox-runtime.sh \
@@ -145,7 +173,19 @@ sudo -i
 安装流量熔断器：
 
 ```bash
-sudo LIMIT_GIB=180 SERVICE_NAME=sing-box bash /tmp/install-egress-guard.sh
+# 12 只是示例；必须替换成审计结果向上取整后的本月已用 GiB。
+sudo INITIAL_USED_GIB=12 LIMIT_GIB=180 SERVICE_NAME=sing-box \
+  bash /tmp/install-egress-guard.sh
+```
+
+首次安装或状态文件丢失时不允许隐式从零开始。熔断器按 `America/Los_Angeles` 月份计数，
+状态/网卡计数器异常时停止并 mask sing-box；跨月默认保持停用，核对 Billing 后手工恢复：
+
+显式提供 `INITIAL_USED_GIB` 会备份旧 `state` 并重建基线，用于修复旧版月中安装的漏计；
+已有可信状态、只是重复安装时可以省略该变量。
+
+```bash
+sudo /usr/local/sbin/gcp-egress-guard --resume
 ```
 
 运行只读诊断：
@@ -166,11 +206,36 @@ sudo bash /tmp/add-vless-tls-inbound.sh
 sudo TLS_DOMAIN="rr.example.com" TLS_PORT=443 bash /tmp/add-vless-tls-inbound.sh
 ```
 
+在同一 sing-box 中新增 HY2 入站（要求 sing-box `1.11+`、证书覆盖该域名）：
+
+```bash
+sudo HY2_DOMAIN="rr.example.com" HY2_USER_NAME="friend-1" \
+  bash /tmp/add-hysteria2-inbound.sh
+sudo cat /root/hysteria2-credentials/friend-1.json
+```
+
+对每位朋友使用不同 `HY2_USER_NAME` 再运行一次。脚本复用已有用户密码，重复执行不会制造
+重复入站；新密码不会输出到终端，只写入权限为 `0600` 的 root-only 客户端片段。它不会配置
+`up_mbps`/`down_mbps`，首轮使用 BBR，不启用 Brutal。
+默认还会把全局日志级别设为 `warn`，不长期记录常规连接目标；排障期间才使用
+`HY2_REDUCE_LOGS=false`。
+
+如果客户端连接 IP、但证书校验使用域名，可分别设置：
+
+```bash
+sudo HY2_SERVER_ADDRESS="203.0.113.10" HY2_DOMAIN="rr.example.com" \
+  bash /tmp/add-hysteria2-inbound.sh
+```
+
+只有确认旧 HY2 从未开放且允许旧客户端失效时，才使用
+`HY2_TAG="existing-tag" HY2_REPLACE_USERS=true` 迁移并轮换旧凭据。
+
 手动检查端口：
 
 ```bash
 sudo ss -lntp | grep 47370
 sudo ss -lntp | grep -E ':(443|8443) '
+sudo ss -lunp | grep ':443 '
 ```
 
 手动检查服务：

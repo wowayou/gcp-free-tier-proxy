@@ -1,0 +1,17 @@
+{
+  "outbounds": [
+    {
+      "type": "hysteria2",
+      "tag": "hy2-test",
+      "server": "YOUR_GRAY_CLOUD_DOMAIN",
+      "server_port": 443,
+      "password": "YOUR_HYSTERIA2_PASSWORD",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "YOUR_CERT_DOMAIN",
+        "insecure": false
+      }
+    }
+  ]
+}

@@ -38,6 +38,16 @@ key: /root/ygkkkca/private.key
 service: sing-box
 ```
 
+并行试验入口：
+
+```text
+Hysteria 2
+port: 443/udp
+certificate: /root/ygkkkca/fullchain.cer
+service: sing-box
+client network: tcp only during the trial
+```
+
 统一保护：
 
 ```text
@@ -57,16 +67,20 @@ Cloud Shell only:
 - `create-vm-standard-ipv4.sh`
 - `open-vless-reality-port.sh`
 - `open-vless-tls-port.sh`
+- `open-hysteria2-port.sh`
 - `create-budget-alert.sh`
 - `audit-leftovers.sh`
+- `audit-cost-and-usage.sh`
 
 VM only:
 
 - `install-egress-guard.sh`
 - `issue-acme-cloudflare-token.sh`
 - `add-vless-tls-inbound.sh`
+- `add-hysteria2-inbound.sh`
 - `export-vless-links.sh`
 - `verify-singbox-runtime.sh`
+- `collect-performance-baseline.sh`
 - `systemctl`
 - `ss`
 - `/etc/s-box/sb.json`
@@ -118,15 +132,20 @@ If the check fails, restore the backup.
 - `README.md`: human entrypoint and quick start.
 - `IMPLEMENTATION.md`: operational runbook.
 - `CHOOSING-VLESS-NODES.md`: decision guide.
+- `HYSTERIA2-EVALUATION.md`: cost gate, diagnosis, A/B acceptance, and rollback guide for Hysteria 2 evaluation.
 - `AGENTS.md`: AI maintenance rules.
 - `create-vm-standard-ipv4.sh`: VM creation baseline.
 - `open-vless-reality-port.sh`: Reality firewall.
 - `open-vless-tls-port.sh`: TLS firewall.
+- `open-hysteria2-port.sh`: scoped HY2 UDP firewall rule.
+- `audit-cost-and-usage.sh`: read-only billing-link, VM cost-property, budget, and month-to-date sent-byte audit.
 - `install-egress-guard.sh`: monthly egress stop/mask guard.
 - `issue-acme-cloudflare-token.sh`: certificate issuance with Cloudflare token.
 - `add-vless-tls-inbound.sh`: append/update VLESS TLS inbound in sing-box config.
+- `add-hysteria2-inbound.sh`: append/update HY2 in the existing sing-box process with backup and rollback.
 - `export-vless-links.sh`: read-only VM helper that prints VLESS client share links; never persist real output.
 - `verify-singbox-runtime.sh`: read-only runtime diagnostics.
+- `collect-performance-baseline.sh`: read-only host, process, and network performance snapshot; never print credentials or full configs.
 - `sing-box-client-*.json`: client fragments only; never put real secrets in them.
 
 ## Validation Checklist
@@ -142,6 +161,7 @@ After editing JSON templates:
 ```powershell
 python -m json.tool sing-box-client-ai-routing.fragment.json
 python -m json.tool sing-box-client-vless-tls.fragment.json
+python -m json.tool sing-box-client-hysteria2.fragment.json
 ```
 
 After editing Markdown:
@@ -150,6 +170,7 @@ After editing Markdown:
 Get-Content -Encoding UTF8 -TotalCount 20 README.md
 Get-Content -Encoding UTF8 -TotalCount 20 IMPLEMENTATION.md
 Get-Content -Encoding UTF8 -TotalCount 20 CHOOSING-VLESS-NODES.md
+Get-Content -Encoding UTF8 -TotalCount 20 HYSTERIA2-EVALUATION.md
 ```
 
 On the VM after runtime changes:
@@ -157,6 +178,7 @@ On the VM after runtime changes:
 ```bash
 sudo bash /tmp/verify-singbox-runtime.sh
 sudo ss -lntp | grep -E ':(47370|443|8443) '
+sudo ss -lunp | grep ':443 '
 sudo systemctl status sing-box --no-pager
 sudo systemctl status gcp-egress-guard.timer --no-pager
 sudo journalctl -u sing-box -n 80 --no-pager

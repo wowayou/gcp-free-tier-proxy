@@ -2,8 +2,10 @@
 set -uo pipefail
 
 SERVICE_NAME="${SERVICE_NAME:-sing-box}"
+SING_BOX_BIN="${SING_BOX_BIN:-}"
 PROXY_PORT="${PROXY_PORT:-47370}"
 TLS_PORT="${TLS_PORT:-443}"
+HY2_PORT="${HY2_PORT:-443}"
 EGRESS_TIMER="${EGRESS_TIMER:-gcp-egress-guard.timer}"
 CERT_DIR="${CERT_DIR:-/root/ygkkkca}"
 CERT_PATH="${CERT_PATH:-${CERT_DIR}/fullchain.cer}"
@@ -34,12 +36,29 @@ fail() {
 check_listener() {
   local port="$1"
   local label="$2"
+  local required="${3:-true}"
 
   if ss -lntp 2>/dev/null | grep -q ":${port} "; then
     ok "${label} tcp:${port} is listening"
     ss -lntp 2>/dev/null | grep ":${port} " || true
   else
-    fail "${label} tcp:${port} is not listening"
+    if [[ "$required" == "true" ]]; then
+      fail "${label} tcp:${port} is not listening"
+    else
+      warn "${label} tcp:${port} is not listening"
+    fi
+  fi
+}
+
+check_udp_listener() {
+  local port="$1"
+  local label="$2"
+
+  if ss -lunp 2>/dev/null | grep -q ":${port} "; then
+    ok "${label} udp:${port} is listening"
+    ss -lunp 2>/dev/null | grep ":${port} " || true
+  else
+    warn "${label} udp:${port} is not listening"
   fi
 }
 
@@ -65,10 +84,25 @@ else
   warn "systemctl is not available"
 fi
 
+if [[ -z "$SING_BOX_BIN" ]]; then
+  if command -v sing-box >/dev/null 2>&1; then
+    SING_BOX_BIN="$(command -v sing-box)"
+  elif [[ -x /etc/s-box/sing-box ]]; then
+    SING_BOX_BIN="/etc/s-box/sing-box"
+  fi
+fi
+
+if [[ -n "$SING_BOX_BIN" ]]; then
+  "$SING_BOX_BIN" version | sed -n '1,2p'
+else
+  warn "sing-box executable not found"
+fi
+
 section "Listener"
 if command -v ss >/dev/null 2>&1; then
   check_listener "$PROXY_PORT" "Reality"
-  check_listener "$TLS_PORT" "VLESS TLS"
+  check_listener "$TLS_PORT" "VLESS TLS" false
+  check_udp_listener "$HY2_PORT" "Hysteria 2"
 else
   warn "ss is not available"
 fi
@@ -85,9 +119,15 @@ if [[ -n "${config_path:-}" ]]; then
   grep -q 'private_key' "$config_path" && ok "reality private_key field exists" || warn "reality private_key field not found"
   grep -q 'short_id' "$config_path" && ok "reality short_id field exists" || warn "reality short_id field not found"
   grep -q 'vless-tls' "$config_path" && ok "vless-tls inbound tag is present" || warn "vless-tls inbound tag not found"
+  grep -q '"type"[[:space:]]*:[[:space:]]*"hysteria2"' "$config_path" && ok "hysteria2 inbound is present" || warn "hysteria2 inbound not found"
   grep -q "\"${TLS_PORT}\"\\|:${TLS_PORT}\\|${TLS_PORT}" "$config_path" && ok "TLS port ${TLS_PORT} is present" || warn "TLS port ${TLS_PORT} not found"
   grep -q 'certificate_path' "$config_path" && ok "TLS certificate_path field exists" || warn "TLS certificate_path field not found"
   grep -q 'key_path' "$config_path" && ok "TLS key_path field exists" || warn "TLS key_path field not found"
+  if [[ -n "$SING_BOX_BIN" ]] && "$SING_BOX_BIN" check -c "$config_path" >/dev/null; then
+    ok "sing-box check passed"
+  else
+    fail "sing-box check failed or executable is unavailable"
+  fi
 else
   fail "no known sing-box config file found"
 fi
@@ -113,18 +153,46 @@ if [[ ! -f "$CERT_PATH" && -f "${CERT_DIR}/cert.crt" ]]; then
   CERT_PATH="${CERT_DIR}/cert.crt"
 fi
 
+if [[ (! -f "$CERT_PATH" || ! -f "$KEY_PATH") && -n "${config_path:-}" ]] && command -v python3 >/dev/null 2>&1; then
+  mapfile -t configured_tls_paths < <(python3 - "$config_path" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8-sig") as handle:
+    data = json.load(handle)
+
+inbounds = data.get("inbounds") or []
+ordered = sorted(inbounds, key=lambda item: item.get("type") != "hysteria2")
+for inbound in ordered:
+    tls = inbound.get("tls") or {}
+    certificate_path = tls.get("certificate_path")
+    key_path = tls.get("key_path")
+    if certificate_path and key_path:
+        print(certificate_path)
+        print(key_path)
+        break
+PY
+  )
+  if [[ "${#configured_tls_paths[@]}" -eq 2 ]]; then
+    CERT_PATH="${configured_tls_paths[0]}"
+    KEY_PATH="${configured_tls_paths[1]}"
+    CERT_DIR="$(dirname "$CERT_PATH")"
+  fi
+fi
+
 if [[ -f "$CERT_PATH" && -f "$KEY_PATH" ]]; then
   ok "certificate files exist in ${CERT_DIR}"
   if command -v openssl >/dev/null 2>&1; then
     openssl x509 -in "$CERT_PATH" -noout -subject -issuer -dates -ext subjectAltName || true
   fi
 else
-  warn "certificate files not found; VLESS Reality does not require them, but VLESS TLS does"
+  warn "certificate files not found; Reality does not require them, but VLESS TLS and Hysteria 2 do"
 fi
 
 section "Reminder"
 cat <<EOF
 VLESS Reality does not use Let's Encrypt certificate files.
 VLESS TLS uses certificate_path/key_path and should listen on tcp:${TLS_PORT}.
+Hysteria 2 uses the same certificate files and should listen on udp:${HY2_PORT}.
 If v2rayN speed test shows 403 but latency is available, test real AI websites before changing node settings.
 EOF

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 : "${PROJECT_ID:?Set PROJECT_ID to your Google Cloud project id.}"
-: "${SSH_SOURCE_RANGE:?Set SSH_SOURCE_RANGE to your public IP CIDR, for example 203.0.113.10/32.}"
+: "${SSH_SOURCE_RANGE:?Set SSH_SOURCE_RANGE to 35.235.240.0/20 for IAP, or an explicitly trusted CIDR.}"
 
 NAME="${NAME:-singbox-free}"
 ZONE="${ZONE:-us-west1-b}"
@@ -64,6 +64,19 @@ ensure_firewall_rule "allow-${SSH_TAG}-22" \
   --source-ranges "$SSH_SOURCE_RANGE" \
   --target-tags "$SSH_TAG" \
   --description "Allow SSH only from the operator public IP range."
+
+# The default VPC usually has default-allow-ssh for 0.0.0.0/0. A second allow
+# rule cannot narrow it, so use a tag-scoped deny below the trusted allow and
+# above the default rule. This does not alter SSH behavior for other VMs.
+ensure_firewall_rule "deny-${SSH_TAG}-22" \
+  --network "$NETWORK" \
+  --direction INGRESS \
+  --priority 1100 \
+  --action DENY \
+  --rules "tcp:22" \
+  --source-ranges "0.0.0.0/0" \
+  --target-tags "$SSH_TAG" \
+  --description "Deny other public SSH sources for this tagged VM."
 
 gcloud compute instances create "$NAME" \
   --project "$PROJECT_ID" \
