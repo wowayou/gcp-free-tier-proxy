@@ -49,6 +49,7 @@
 | `issue-acme-cloudflare-token.sh` | VM | 使用 Cloudflare API Token 申请/安装证书 |
 | `add-vless-tls-inbound.sh` | VM | 在现有 sing-box 配置里新增 `VLESS TCP+TLS` 入站 |
 | `add-hysteria2-inbound.sh` | VM | 备份并校验配置后，在现有 sing-box 增加 HY2 入站 |
+| `manage-hysteria2-users.sh` | VM | 安装持久化命令，安全新增、导出、列出或撤销 HY2 用户 |
 | `export-vless-links.sh` | VM | 只读导出 `vless://` 分享链接和本地订阅内容 |
 | `verify-singbox-runtime.sh` | VM | 只读诊断 sing-box、端口、证书、熔断器 |
 | `sing-box-client-ai-routing.fragment.json` | 本地客户端 | AI 分流模板 |
@@ -124,6 +125,7 @@ gcloud compute ssh "$VM_NAME" \
 gcloud compute scp \
   gcp-free-tier-proxy/install-egress-guard.sh \
   gcp-free-tier-proxy/add-hysteria2-inbound.sh \
+  gcp-free-tier-proxy/manage-hysteria2-users.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
   gcp-free-tier-proxy/export-vless-links.sh \
   gcp-free-tier-proxy/verify-singbox-runtime.sh \
@@ -232,10 +234,35 @@ systemctl mask sing-box
 ```bash
 sudo HY2_DOMAIN="rr.example.com" HY2_USER_NAME="friend-1" \
   bash /tmp/add-hysteria2-inbound.sh
-sudo cat /root/hysteria2-credentials/friend-1.json
 ```
 
 脚本会先备份配置、执行 `sing-box check`、重启并确认 UDP 监听；任一步失败会自动恢复备份。
+当用户管理脚本与它位于同一目录时，还会自动安装 root-only 管理命令。之后新增第二个人只需：
+
+```bash
+sudo sing-box-hy2-user add friend-2
+sudo sing-box-hy2-user list
+```
+
+命令自动识别当前唯一的 HY2 入站、端口、证书和 TLS 域名，保留已有用户，为新用户生成独立
+强密码，并创建两个权限为 `0600` 的文件：
+
+```text
+/root/hysteria2-credentials/friend-2.json
+/root/hysteria2-credentials/friend-2.txt
+```
+
+`.txt` 是可导入客户端的 `hysteria2://` 链接。命令只报告文件路径，不把密码或链接打印到终端。
+重新导出和撤销用户分别使用：
+
+```bash
+sudo sing-box-hy2-user export friend-2
+sudo sing-box-hy2-user remove friend-2
+```
+
+撤销前会交互确认，并拒绝删除最后一个用户。每次配置变更仍会备份、校验、重启和检查 UDP
+监听；失败自动回滚。若配置中有多个 HY2 入站，才需要显式传入 `HY2_TAG`。
+
 它还仅对 HY2 入站拒绝访问云元数据域名与私网地址。不要在客户端设置 `insecure: true`。
 默认会把 sing-box 全局日志级别从 `info` 收紧为 `warn`，避免长期记录常规连接目标；需要临时
 排障时可显式传入 `HY2_REDUCE_LOGS=false` 保留原级别。

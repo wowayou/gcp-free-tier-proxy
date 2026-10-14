@@ -78,6 +78,7 @@ VM only:
 - `issue-acme-cloudflare-token.sh`
 - `add-vless-tls-inbound.sh`
 - `add-hysteria2-inbound.sh`
+- `manage-hysteria2-users.sh`
 - `export-vless-links.sh`
 - `verify-singbox-runtime.sh`
 - `collect-performance-baseline.sh`
@@ -143,6 +144,7 @@ If the check fails, restore the backup.
 - `issue-acme-cloudflare-token.sh`: certificate issuance with Cloudflare token.
 - `add-vless-tls-inbound.sh`: append/update VLESS TLS inbound in sing-box config.
 - `add-hysteria2-inbound.sh`: append/update HY2 in the existing sing-box process with backup and rollback.
+- `manage-hysteria2-users.sh`: install and operate the root-only `sing-box-hy2-user` add/list/export/remove command.
 - `export-vless-links.sh`: read-only VM helper that prints VLESS client share links; never persist real output.
 - `verify-singbox-runtime.sh`: read-only runtime diagnostics.
 - `collect-performance-baseline.sh`: read-only host, process, and network performance snapshot; never print credentials or full configs.

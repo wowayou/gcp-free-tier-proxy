@@ -127,6 +127,10 @@ sudo HY2_DOMAIN="rr.example.com" HY2_USER_NAME="friend-1" \
   bash /tmp/add-hysteria2-inbound.sh
 ```
 
+同时上传 `manage-hysteria2-users.sh` 时，部署脚本会安装持久化管理命令。后续新增使用者无需再次
+填写端口、证书或标签，只运行 `sudo sing-box-hy2-user add friend-2`；导入链接写入 root-only
+文件，不在终端回显。
+
 然后在 Cloud Shell 开放防火墙；固定出口优先使用 `/32`：
 
 ```bash

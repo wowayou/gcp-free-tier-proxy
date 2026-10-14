@@ -56,6 +56,7 @@ Argo、WARP、CDN 回源。
 - `audit-cost-and-usage.sh`：Cloud Shell 中执行，只读检查账单关联、VM 成本属性、预算和当月发送量。
 - `install-egress-guard.sh`：VM 中执行，安装月度出站流量熔断器。
 - `add-hysteria2-inbound.sh`：VM 中执行，在现有 sing-box 内安全增加 HY2 入站。
+- `manage-hysteria2-users.sh`：VM 中执行，安装后用一个命令管理 HY2 用户和导入文件。
 - `verify-singbox-runtime.sh`：VM 中执行，只读检查 sing-box、端口、熔断器和证书文件。
 - `collect-performance-baseline.sh`：VM 中执行，只读采集慢速诊断的主机、进程和网络基线。
 - `issue-acme-cloudflare-token.sh`：可选工具，仅给普通 TLS/WS/网页服务申请证书；Reality 不依赖它。
@@ -140,6 +141,7 @@ gcloud compute ssh "$VM_NAME" \
 gcloud compute scp \
   gcp-free-tier-proxy/install-egress-guard.sh \
   gcp-free-tier-proxy/add-hysteria2-inbound.sh \
+  gcp-free-tier-proxy/manage-hysteria2-users.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
   gcp-free-tier-proxy/export-vless-links.sh \
   gcp-free-tier-proxy/verify-singbox-runtime.sh \
@@ -211,11 +213,28 @@ sudo TLS_DOMAIN="rr.example.com" TLS_PORT=443 bash /tmp/add-vless-tls-inbound.sh
 ```bash
 sudo HY2_DOMAIN="rr.example.com" HY2_USER_NAME="friend-1" \
   bash /tmp/add-hysteria2-inbound.sh
-sudo cat /root/hysteria2-credentials/friend-1.json
 ```
 
-对每位朋友使用不同 `HY2_USER_NAME` 再运行一次。脚本复用已有用户密码，重复执行不会制造
-重复入站；新密码不会输出到终端，只写入权限为 `0600` 的 root-only 客户端片段。它不会配置
+当 `manage-hysteria2-users.sh` 与部署脚本位于同一目录时，会自动安装为
+`/usr/local/sbin/sing-box-hy2-user`。之后不要重复填写端口、标签和证书路径；每位朋友使用独立名称：
+
+```bash
+sudo sing-box-hy2-user add friend-2
+sudo sing-box-hy2-user list
+sudo sing-box-hy2-user export friend-2
+sudo sing-box-hy2-user remove friend-2
+```
+
+`add` 自动识别现有唯一 HY2 入站并保留其他用户；重复添加同名用户只重新导出，不轮换密码。
+`remove` 需要交互确认且拒绝删除最后一个用户。每次实际配置变更都会备份、运行
+`sing-box check`、重启、检查 UDP 监听并在失败时回滚。新密码不会输出到终端，而是写入：
+
+```text
+/root/hysteria2-credentials/<user>.json
+/root/hysteria2-credentials/<user>.txt
+```
+
+JSON 是 sing-box 出站片段，TXT 是客户端导入链接，权限均为 `0600`。脚本不会配置
 `up_mbps`/`down_mbps`，首轮使用 BBR，不启用 Brutal。
 默认还会把全局日志级别设为 `warn`，不长期记录常规连接目标；排障期间才使用
 `HY2_REDUCE_LOGS=false`。

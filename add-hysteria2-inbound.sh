@@ -99,6 +99,8 @@ require_cmd openssl
 require_cmd python3
 require_cmd ss
 require_cmd systemctl
+require_cmd install
+require_cmd readlink
 
 if [[ -z "$SING_BOX_BIN" ]]; then
   if command -v sing-box >/dev/null 2>&1; then
@@ -409,6 +411,14 @@ PY
 
 trap - ERR
 
+manager_source="$(dirname "$(readlink -f "$0")")/manage-hysteria2-users.sh"
+manager_install_path="/usr/local/sbin/sing-box-hy2-user"
+manager_note="User manager was not installed; upload manage-hysteria2-users.sh next to this script and rerun."
+if [[ -f "$manager_source" ]]; then
+  install -o root -g root -m 0750 "$manager_source" "$manager_install_path"
+  manager_note="User manager installed: $manager_install_path"
+fi
+
 cat <<EOF
 Hysteria 2 inbound is ready in sing-box.
 Config: $CONFIG_PATH
@@ -419,9 +429,14 @@ TLS server name: $HY2_DOMAIN
 Client server address: $HY2_SERVER_ADDRESS
 User: $HY2_USER_NAME
 Client credential file (mode 0600): $CREDENTIAL_PATH
+$manager_note
 
 The password was not printed. Read the credential locally when needed:
   sudo cat $CREDENTIAL_PATH
+
+Future users can be managed with:
+  sudo sing-box-hy2-user add friend-2
+  sudo sing-box-hy2-user list
 
 Rollback:
   sudo cp $BACKUP_PATH $CONFIG_PATH
