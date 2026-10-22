@@ -147,11 +147,12 @@ gcloud compute ssh "$VM_NAME" \
   --tunnel-through-iap
 ```
 
-传维护脚本到 VM，避免复制粘贴时截断：
+传维护脚本到 VM，避免复制粘贴时截断（`install-egress-guard.sh` 依赖同级的 `egress-guard/` 目录，必须一起上传）：
 
 ```bash
-gcloud compute scp \
+gcloud compute scp --recurse \
   gcp-free-tier-proxy/install-egress-guard.sh \
+  gcp-free-tier-proxy/egress-guard \
   gcp-free-tier-proxy/add-hysteria2-inbound.sh \
   gcp-free-tier-proxy/manage-hysteria2-users.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
@@ -320,11 +321,32 @@ go test ./...
 bash ../download-hysteria-release.sh amd64 /tmp/hysteria
 HY2_BIN=/tmp/hysteria go test -race ./internal/account -run TestPinned -v
 
-CGO_ENABLED=0 go build -trimpath -o /tmp/hy2-account ./cmd/hy2-account
-/tmp/hy2-account version
+CGO_ENABLED=0 go build -trimpath -o /tmp/hy2-account.bin ./cmd/hy2-account
+/tmp/hy2-account.bin version
 ```
 
 产物是静态二进制；SQLite 使用纯 Go 驱动，不要求在 VM 上安装 C 编译器或 SQLite 开发包。
+
+### 上传迁移包
+
+`install-hy2-account.sh` 从自身所在目录读取 `hy2-account/systemd/` 和 `sync-hysteria-cert.sh`，迁移步骤还要用到
+`hy2-account/tools/`。因此把它们按原目录结构放进独立的暂存目录，二进制用 `.bin` 等文件名，避免与
+`hy2-account/` 目录重名。在已认证 `gcloud` 的机器上执行；若在 Cloud Shell 执行，先把两个本地二进制上传到 Cloud Shell：
+
+```bash
+gcloud compute ssh "$VM_NAME" --zone "$ZONE" --project "$PROJECT_ID" --tunnel-through-iap \
+  --command 'install -d -m 0700 /tmp/hy2-release'
+gcloud compute scp --recurse \
+  gcp-free-tier-proxy/install-hy2-account.sh \
+  gcp-free-tier-proxy/sync-hysteria-cert.sh \
+  gcp-free-tier-proxy/hy2-account \
+  /tmp/hy2-account.bin \
+  /tmp/hysteria \
+  "$VM_NAME":/tmp/hy2-release/ \
+  --zone "$ZONE" --project "$PROJECT_ID" --tunnel-through-iap
+```
+
+安装器会在 VM 上重新校验官方核心的 SHA-256；不要在 VM 上下载或编译。
 
 ### 迁移前预检（阶段 C）
 
@@ -361,11 +383,11 @@ sudo INITIAL_USED_GIB=12 LIMIT_GIB=180 SERVICE_NAMES="sing-box hysteria-server" 
 
 ```bash
 sudo CONFIRM_LOCAL_INSTALL=yes \
-  ACCOUNT_BINARY=/tmp/hy2-account \
-  HYSTERIA_BINARY=/tmp/hysteria \
+  ACCOUNT_BINARY=/tmp/hy2-release/hy2-account.bin \
+  HYSTERIA_BINARY=/tmp/hy2-release/hysteria \
   HY2_DOMAIN="rr.example.com" \
   QUOTA_POOL_GIB=140 \
-  bash /tmp/install-hy2-account.sh
+  bash /tmp/hy2-release/install-hy2-account.sh
 ```
 
 参数说明：
@@ -414,7 +436,7 @@ sudo hy2-admin import /root/hy2-import.json
 CONFIG=/etc/s-box/sb.json   # 替换为实际路径
 sudo cp -a "$CONFIG" "${CONFIG}.bak.$(date -u +%Y%m%d-%H%M%S)"
 sudo systemctl stop sing-box
-sudo python3 /tmp/hy2-account/tools/remove_singbox_hy2.py "$CONFIG"
+sudo python3 /tmp/hy2-release/hy2-account/tools/remove_singbox_hy2.py "$CONFIG"
 sudo sing-box check -c "$CONFIG"
 sudo systemctl start sing-box
 ```
@@ -551,7 +573,7 @@ sudo hy2-admin system activate
 ### 当前限制
 
 - 尚未在真实 VM、真实证书和真实客户端上完成本手册的迁移验收；本地验证不能替代 VM 现场验证。
-- VM 重启后 HY2 不会自动恢复：内存统计已丢失，`health gate` 和持久状态会保持关闭，必须重新核对 guard/账本后再执行 `system arm`、启动核心和 `system activate`。这是有意的 fail-closed 行为，不是自动重连。
+- VM 重启后 HY2 不会自动恢复：内存统计已丢失，`health gate` 和持久状态会保持关闭，必须重新核对 guard/账本后再执行 `system arm`、启动核心和 `system activate`。这是有意的 fail-closed 行为，不是自动重连。重启后 `hy2-health.timer` 会因认证处于 hold 而写入 `/var/lib/hy2-health/blocked` 并 mask HY2，这是**预期结果**，不是需要排查的故障；`system arm` 会清除该锁。
 - 个人额度是采样软限额，存在 5 秒采样、`/kick` 在途和连接关闭延迟；不是字节级硬截断。
 - `HY2` 个人流量不等于 Google 结算流量；整机熔断是保守的 VM 发送字节近似值，也不是财务硬上限。
 - 第一版不做速度限制、Brutal、端口跳跃、公网管理页、朋友自助后台、自动核心升级或外部监控。

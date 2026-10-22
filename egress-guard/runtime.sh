@@ -90,23 +90,23 @@ PY
   mv -f "$tmp" "$STATUS_FILE"
 }
 
+# Callers use `write_state || fail_closed`, where bash disables `set -e` inside
+# the function. Every step is therefore checked explicitly; a failed publish
+# must never fall through to a startup permit with unpersisted usage.
 write_state() {
   local tmp
-  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
-  chmod 0600 "$tmp"
-  {
-    printf 'state_month=%s\n' "$state_month"
-    printf 'last_tx=%s\n' "$last_tx"
-    printf 'used_bytes=%s\n' "$used_bytes"
-    printf 'blocked_by_guard=%s\n' "$blocked_by_guard"
-    printf 'warning_logged=%s\n' "$warning_logged"
-    printf 'last_boot_id=%s\n' "$last_boot_id"
-    printf 'last_interface=%s\n' "$last_interface"
-    printf 'updated_epoch=%s\n' "$now"
-  } >"$tmp"
-  sync -f "$tmp"
-  mv -f "$tmp" "$STATE_FILE"
-  sync -f "$STATE_DIR"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if chmod 0600 "$tmp" &&
+     printf 'state_month=%s\nlast_tx=%s\nused_bytes=%s\nblocked_by_guard=%s\nwarning_logged=%s\nlast_boot_id=%s\nlast_interface=%s\nupdated_epoch=%s\n' \
+       "$state_month" "$last_tx" "$used_bytes" "$blocked_by_guard" "$warning_logged" \
+       "$last_boot_id" "$last_interface" "$now" >"$tmp" &&
+     sync -f "$tmp" &&
+     mv -f "$tmp" "$STATE_FILE" &&
+     sync -f "$STATE_DIR"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
 }
 
 mask_all() {

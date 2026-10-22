@@ -245,6 +245,37 @@ elif a[0]=="start":
         self.assertEqual(before,(self.root / "state/state").read_bytes())
         self.assertEqual(self.calls(),[])
 
+    def fail_state_publish(self):
+        # Only the atomic rename onto the state file fails (disk full / EIO).
+        self.script("mv", """#!/usr/bin/env python3
+import os, sys
+if sys.argv[-1] == os.path.join(os.environ['GUARD_STATE_DIR'], 'state'):
+    raise SystemExit(1)
+os.execvp('/usr/bin/mv', ['/usr/bin/mv', *sys.argv[1:]])
+""")
+
+    def test_unpublished_state_denies_startup_permit(self):
+        self.fail_state_publish()
+        before = (self.root / "state/state").read_bytes()
+        (self.root / "sys/eth0/statistics/tx_bytes").write_text("500\n")
+        self.run_guard("--permit", "hysteria-server", success=False)
+        self.assertEqual(before, (self.root / "state/state").read_bytes())
+        self.assertTrue((self.root / "state/blocked").exists())
+        # The startup gate must not stop its own activating unit.
+        self.assertFalse(any(a[0] == "stop" for a in self.calls()))
+        self.assertEqual(list((self.root / "state").glob("state.tmp.*")), [])
+
+    def test_unpublished_state_in_timer_run_stops_both(self):
+        self.fail_state_publish()
+        for s in ["sing-box", "hysteria-server"]: (self.root / (s+".active")).write_text("true")
+        (self.root / "sys/eth0/statistics/tx_bytes").write_text("500\n")
+        self.run_guard(success=False)
+        self.assertTrue((self.root / "state/blocked").exists())
+        for s in ["sing-box", "hysteria-server"]:
+            self.assertIn(["stop", s+".service"], self.calls())
+            self.assertTrue((self.root / "early" / (s+".service")).is_symlink())
+        self.assertFalse(json.loads((self.root / "run/status.json").read_text())["healthy"])
+
 
 if __name__ == "__main__":
     unittest.main()

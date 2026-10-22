@@ -137,11 +137,12 @@ gcloud compute ssh "$VM_NAME" \
   --tunnel-through-iap
 ```
 
-把 VM 脚本传进去：
+把 VM 脚本传进去（`install-egress-guard.sh` 依赖同级的 `egress-guard/` 目录）：
 
 ```bash
-gcloud compute scp \
+gcloud compute scp --recurse \
   gcp-free-tier-proxy/install-egress-guard.sh \
+  gcp-free-tier-proxy/egress-guard \
   gcp-free-tier-proxy/add-hysteria2-inbound.sh \
   gcp-free-tier-proxy/manage-hysteria2-users.sh \
   gcp-free-tier-proxy/add-vless-tls-inbound.sh \
@@ -176,10 +177,10 @@ go test ./...
 # 可选：固定版本官方核心的回环隔离测试，不会接触 VM、公网目标或 systemd
 bash ../download-hysteria-release.sh amd64 /tmp/hysteria
 HY2_BIN=/tmp/hysteria go test -race ./internal/account -run TestPinned -v
-CGO_ENABLED=0 go build -trimpath -o /tmp/hy2-account ./cmd/hy2-account
+CGO_ENABLED=0 go build -trimpath -o /tmp/hy2-account.bin ./cmd/hy2-account
 ```
 
-把 `install-hy2-account.sh`、`sync-hysteria-cert.sh`、`hy2-account/systemd/`、`hy2-account/tools/`、构建好的二进制和已校验的官方 HY2 二进制传到 VM。迁移前必须：
+按 [IMPLEMENTATION.md 的“上传迁移包”](./IMPLEMENTATION.md#上传迁移包) 把 `install-hy2-account.sh`、`sync-hysteria-cert.sh`、整个 `hy2-account/` 目录、构建好的二进制和已校验的官方 HY2 二进制按原目录结构传到 VM 的 `/tmp/hy2-release/`。迁移前必须：
 
 1. 用 `audit-cost-and-usage.sh` 核实本月已用、账单和共享免费额度。
 2. 用 `INITIAL_USED_GIB` 重建/确认熔断器基线，并显式传入 `SERVICE_NAMES="sing-box hysteria-server"`。
@@ -432,7 +433,8 @@ HY2_BIN=/path/to/verified/hysteria go test -race ./internal/account -run TestPin
 本地 Python 回归（不接触 systemd/VM）：
 
 ```bash
-python3 -m unittest -q tests.test_egress_guard tests.test_remove_singbox_hy2
+python3 -m unittest -q tests.test_egress_guard tests.test_remove_singbox_hy2 \
+  tests.test_sync_hysteria_cert tests.test_install_hy2_account
 HY2_BIN=/path/to/verified/hysteria python3 tests/hy2_core_isolation.py
 ```
 

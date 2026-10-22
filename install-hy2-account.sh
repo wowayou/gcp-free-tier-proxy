@@ -7,8 +7,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # proxies. The guard installer intentionally preserves an existing service list.
 GUARD_CONFIG="${GUARD_CONFIG:-/etc/default/gcp-egress-guard}"
 [[ -r "$GUARD_CONFIG" ]] || { echo "Install/upgrade gcp-egress-guard first with SERVICE_NAMES='sing-box hysteria-server'." >&2; exit 1; }
+# Exact unit names, same normalization as the guard runtime (not substrings:
+# "sing-box-old hysteria-server-old" must not count as coverage).
 guard_services="$(grep -E '^SERVICE_NAMES=' "$GUARD_CONFIG" | tail -n 1 || true)"
-[[ "$guard_services" == *sing-box* && "$guard_services" == *hysteria-server* ]] || {
+guard_services="${guard_services#SERVICE_NAMES=}"; guard_services="${guard_services#\"}"; guard_services="${guard_services%\"}"
+read -r -a guard_units <<<"$guard_services"
+covers_singbox=false covers_hy2=false
+for unit in "${guard_units[@]}"; do
+  case "${unit%.service}" in sing-box) covers_singbox=true ;; hysteria-server) covers_hy2=true ;; esac
+done
+[[ "$covers_singbox" == true && "$covers_hy2" == true ]] || {
   echo 'gcp-egress-guard does not cover both sing-box and hysteria-server; refusing partial protection.' >&2
   exit 1
 }

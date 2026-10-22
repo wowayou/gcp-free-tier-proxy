@@ -2,7 +2,7 @@
 
 更新时间：2026-10-22
 
-状态：**本地阶段验收通过；生产 VM 验收未执行。** 本记录用于上线前交叉核验，不代表已经迁移生产。
+状态：**本地阶段验收通过（含交叉核验后的 A2 修复，见第 8 节）；生产 VM 验收未执行。** 本记录用于上线前交叉核验，不代表已经迁移生产。
 
 ## 1. 验收范围
 
@@ -41,8 +41,10 @@ go test -cover ./...                                 internal 68.2%，cmd 5.6%�
 CGO_ENABLED=0 go build -trimpath ...                 PASS（静态 ELF）
 /tmp/hy2-account-build version                       hy2-account 1; core v2.13.0 ca8fbd8...
 
-python3 -m unittest tests.test_egress_guard           PASS（18）
+python3 -m unittest tests.test_egress_guard           PASS（20，含 A2 状态发布失败 2 项）
 python3 -m unittest tests.test_remove_singbox_hy2     PASS（4）
+python3 -m unittest tests.test_sync_hysteria_cert     PASS（5，A2 新增；unshare -r）
+python3 -m unittest tests.test_install_hy2_account    PASS（2，A2 新增；unshare -r）
 HY2_BIN=<pinned v2.13.0> python3 tests/hy2_core_isolation.py  PASS
 bash -n *.sh egress-guard/*.sh hy2-account/systemd/*.sh       PASS
 JSON 模板校验                                        PASS
@@ -73,19 +75,23 @@ loopback <1 MiB
 | 恢复旧备份/witness 不一致 | PASS | 认证关闭、页面标注核验；显式补账后才恢复 |
 | 跨月、手工禁用、撤销 | PASS | 月账本保留；禁用/撤销不因跨月恢复；姓名/凭据墓碑不可复用 |
 | 减额度低于已用量 | PASS | 立即排队封禁目标账户，不抹掉已用量 |
-| 整机保护覆盖两个服务 | PASS | fake systemctl 回归：逐一 stop/mask，单个失败不跳过另一个 |
-| VM/服务重启绕过 | PASS | 开机 generator + `ExecStartPre` 许可门禁；blocked 状态不能被普通启动绕过 |
+| 整机保护覆盖两个服务 | PASS（A2） | fake systemctl 回归：逐一 stop/mask，单个失败不跳过另一个；状态文件发布失败时两服务均停止并 mask（A2 前会静默少计） |
+| VM/服务重启绕过 | PASS（A2） | 开机 generator + `ExecStartPre` 许可门禁；blocked 状态不能被普通启动绕过；状态未持久化时 `--permit` 拒绝（A2 前会放行） |
 | 个人踢出失败触发共享停服 | PASS | 个人失败不改变 review/hold；共享统计故障才由独立 health 服务停 HY2 |
 | ACL 私网/元数据/映射地址 | PASS | 单元契约 + 官方核心 ACL 测试；公共 IPv4 正向可用 |
 | 业务 UDP 禁用/证书校验 | PASS | `disableUDP: true`、`insecure: false`、`sniGuard: strict`、BBR、无 Brutal |
+| 证书同步 SAN/有效期/密钥匹配 | PASS（A2） | 一次性假证书：SAN 错误、剩余 <24h、密钥不匹配均拒绝且不替换 `current`；精确与通配 SAN 可发布（A2 前 SAN 检查无效） |
 | 旧 sing-box HY2 移除工具 | PASS | 只删确认属于旧入站的规则；歧义引用/无 tag/无 HY2 时拒绝 |
 | 旧入口命令阻断 | PASS | 安装账户后端后拒绝 legacy 创建/用户管理 |
-| 文档迁移顺序 | PASS | 先释放 UDP 443，再 `system arm`、启动官方 HY2、激活 |
+| 安装前 guard 覆盖门禁 | PASS（A2） | 精确 unit 名；`sing-box-old hysteria-server-old` 等相似名或单服务列表在任何变更前拒绝（A2 前为子串匹配） |
+| 旧用户导入格式 | PASS（A2） | 真实 CLI 解析器接受文档中的 `{"users":[...]}`；裸数组、空列表、未知字段、非 0600 文件拒绝（A2 前文档格式被拒绝） |
+| 文档迁移顺序 | PASS（A2） | 先释放 UDP 443，再 `system arm`、启动官方 HY2、激活；上传包保留安装器依赖的目录结构，二进制与 `hy2-account/` 不重名 |
 
 ## 5. 本地未覆盖、必须 VM 现场验收
 
 - systemd sandbox 下 `CAP_NET_BIND_SERVICE` 绑定 UDP 443、`ProtectSystem`、`RuntimeDirectory`、`SupplementaryGroups` 的实际行为。
-- `hy2-health.timer`、开机 generator、`gcp-egress-guard` 与真实 systemd 的联动和重启表现。
+- `hy2-health.timer`、开机 generator、`gcp-egress-guard` 与真实 systemd 的联动和重启表现。预期：VM 重启后 `hy2-health` 会写入 `/var/lib/hy2-health/blocked` 并 mask HY2，直到 `system arm`；这是 fail-closed 设计，不应当作故障。
+- guard 状态目录磁盘满/只读时的真实文件系统行为（本地仅用 `mv` 故障注入验证）。
 - 真实证书 SAN、续签钩子、证书/私钥权限和 HY2 热加载。
 - 真实客户端（多设备、网络切换、空闲连接）下的封禁延迟和重连行为。
 - e2-micro 上的实际 RSS/CPU、并发、SQLite/WAL 增长和 128M/256M 限制是否足够。
@@ -111,4 +117,31 @@ loopback <1 MiB
 
 ## 7. 结论
 
-本地阶段（阶段 A/B）通过，可以进入只读 VM 预检和交叉核验。生产迁移、真实客户端验收和账单确认尚未完成，不能把本记录当作上线批准。
+本地阶段（阶段 A/B，含 A2 修复）通过，可以进入只读 VM 预检和交叉核验。生产迁移、真实客户端验收和账单确认尚未完成，不能把本记录当作上线批准。
+
+## 8. 交叉核验与 A2 修复记录（2026-10-22）
+
+第 6 节交叉核验复现了第 3 节全部结果，另用负向测试发现以下问题。每项修复都配有回归测试，并确认该测试在修复前的代码上失败。
+
+| # | 问题 | 影响 | 修复 | 回归 |
+| --- | --- | --- | --- | --- |
+| 1 | `egress-guard/runtime.sh` 的 `write_state` 以 `\|\| fail_closed` 调用，bash 在此处禁用 `set -e`，`mv` 失败被忽略 | 磁盘满/只读时仍放行启动，用量未持久化；重启后该段永久少计 | 每步显式检查并清理临时文件 | `test_unpublished_state_*`（2） |
+| 2 | `sync-hysteria-cert.sh` 依赖 `openssl x509 -checkhost` 的退出码，而它在不匹配时也返回 0 | SAN 错误的证书会被发布并替换 `current`，HY2 握手失败 | 只接受精确的肯定输出；锁路径可用 `SYNC_LOCK_PATH` 覆盖以便测试 | `tests/test_sync_hysteria_cert.py`（5） |
+| 3 | `hy2-admin import` 解析裸数组，文档写 `{"users":[...]}` | 迁移窗口中导入步骤必然失败 | CLI 改为文档格式并拒绝空列表 | `cmd/hy2-account` 2 项 |
+| 4 | 安装器 guard 覆盖检查为子串匹配 | 相似名误通过（运行时 `ReadGuard` 精确匹配，不致漏保护） | 精确 unit 名 | `tests/test_install_hy2_account.py`（2） |
+| 5 | 上传清单缺 `egress-guard/`、`hy2-account/`；`/tmp/hy2-account` 既作二进制又作目录 | 按文档操作安装器失败或路径冲突 | README/IMPLEMENTATION 改为 `/tmp/hy2-release/` 包结构 | 文档人工核对 |
+
+A2 复验（本地离线，`GOPROXY=off`，官方核心 SHA-256 已核对）：
+
+```text
+gofmt -l . / go vet ./...                                   PASS
+HY2_BIN=<pinned v2.13.0> go test -race -count=1 ./...        PASS
+HY2_BIN=<pinned v2.13.0> go test -race -count=3 -run TestPinned PASS
+go test -cover ./...（未设 HY2_BIN）                       internal 62.9%，cmd 24.3%
+CGO_ENABLED=0 go build -trimpath                            PASS（静态 ELF）
+Python 4 个模块                                            PASS（31）
+HY2_BIN=<pinned v2.13.0> python3 tests/hy2_core_isolation.py PASS
+bash -n（21 个脚本）/ JSON / git diff --check              PASS
+```
+
+A2 仍未覆盖：第 5 节全部 VM 现场项；证书同步和安装器测试在用户命名空间中运行，属主/属组交由 VM 验证。

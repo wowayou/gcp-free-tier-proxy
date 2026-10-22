@@ -333,10 +333,14 @@ cd hy2-account && go vet ./...                         PASS
 cd hy2-account && go test ./...                        PASS
 HY2_BIN=<verified v2.13.0> go test -race ./...          PASS
 HY2_BIN=<verified v2.13.0> python3 tests/hy2_core_isolation.py  PASS
-python3 -m unittest tests.test_egress_guard            PASS (18 tests)
+python3 -m unittest tests.test_egress_guard            PASS (20 tests)
 python3 -m unittest tests.test_remove_singbox_hy2      PASS (4 tests)
+python3 -m unittest tests.test_sync_hysteria_cert      PASS (5 tests, unshare -r)
+python3 -m unittest tests.test_install_hy2_account     PASS (2 tests, unshare -r)
 bash -n *.sh egress-guard/*.sh hy2-account/systemd/*.sh PASS
 ```
+
+交叉核验后修复（阶段 A2，详见 `STAGE-A-ACCEPTANCE.md` 第 8 节）：guard 状态发布失败必须 fail-closed；证书 SAN 不匹配拒绝发布；导入映射与文档格式 `{"users":[...]}` 一致；安装器按精确 unit 名检查 guard 覆盖。
 
 官方核心回环测试覆盖：两个账户、目标账户 4 条会话（含多设备、空闲连接和认证竞争）、另一个账户同一 TCP+QUIC 连接持续传输且连接 ID 不变、封禁后新认证拒绝、额度耗尽只封目标、源 IP 不连带、上传/下载方向与非对称流量统计。
 

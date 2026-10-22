@@ -231,6 +231,8 @@ After editing the Python guard tests or standalone core gate:
 ```bash
 python3 -m unittest -v tests.test_egress_guard
 python3 -m unittest -v tests.test_remove_singbox_hy2
+# Namespace-root only (unshare -r); throwaway certificates, fake systemctl
+python3 -m unittest -v tests.test_sync_hysteria_cert tests.test_install_hy2_account
 HY2_BIN=/path/to/verified/hysteria python3 tests/hy2_core_isolation.py
 ```
 

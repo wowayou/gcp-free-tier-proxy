@@ -7,16 +7,20 @@ CONFIG="${HY2_ACCOUNT_CONFIG:-/etc/hy2-account/config.json}"
 CERT_PATH="${CERT_PATH:-/root/ygkkkca/fullchain.cer}"
 KEY_PATH="${KEY_PATH:-/root/ygkkkca/private.key}"
 CERT_ROOT="${CERT_ROOT:-/etc/hysteria/certs}"
+LOCK_PATH="${SYNC_LOCK_PATH:-/run/lock/sync-hysteria-cert.lock}"
 DOMAIN="$(python3 - "$CONFIG" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: print(json.load(f)['sni'])
 PY
 )"
 [[ -f "$CERT_PATH" && -f "$KEY_PATH" ]] || { echo 'Certificate/key missing.' >&2; exit 1; }
-exec 9>/run/lock/sync-hysteria-cert.lock
+exec 9>"$LOCK_PATH"
 flock -w 10 9 || exit 1
-openssl x509 -in "$CERT_PATH" -noout -checkhost "$DOMAIN" >/dev/null
-openssl x509 -in "$CERT_PATH" -noout -checkend 86400 >/dev/null
+# `openssl x509 -checkhost` exits 0 even on mismatch (observed: OpenSSL 3.0); only
+# its exact positive verdict is accepted. SNI is a validated hostname.
+check="$(openssl x509 -in "$CERT_PATH" -noout -checkhost "$DOMAIN")" || exit 1
+[[ "$check" == "Hostname $DOMAIN does match certificate" ]] || { echo "Certificate SAN does not cover $DOMAIN; not published." >&2; exit 1; }
+openssl x509 -in "$CERT_PATH" -noout -checkend 86400 >/dev/null || { echo 'Certificate expires within 24h; not published.' >&2; exit 1; }
 cert_public="$(openssl x509 -in "$CERT_PATH" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
 key_public="$(openssl pkey -in "$KEY_PATH" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
 [[ "$cert_public" == "$key_public" ]] || { echo 'Certificate/key mismatch; not published.' >&2; exit 1; }

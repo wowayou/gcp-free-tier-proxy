@@ -266,9 +266,17 @@ func admin(cfg account.Config, args []string) error {
 		if err := verifyCoreStopped(); err != nil {
 			return err
 		}
-		if err := account.ReadPrivateJSON(args[1], &req.Users, 65536); err != nil {
+		// Documented, self-describing mapping: {"users":[{name,password,quota_bytes}]}.
+		var mapping struct {
+			Users []account.NewUser `json:"users"`
+		}
+		if err := account.ReadPrivateJSON(args[1], &mapping, 65536); err != nil {
 			return err
 		}
+		if len(mapping.Users) == 0 {
+			return errors.New("import mapping must contain a non-empty \"users\" list")
+		}
+		req.Users = mapping.Users
 	default:
 		return usage()
 	}
