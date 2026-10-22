@@ -1,0 +1,40 @@
+[Unit]
+Description=Local HY2 account authentication and durable usage accounting
+After=local-fs.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=hy2-account
+Group=hy2-account
+SupplementaryGroups=hysteria
+ExecStart=/usr/local/lib/hy2-account/hy2-account serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+UMask=0077
+StateDirectory=hy2-account hy2-account-witness
+StateDirectoryMode=0700
+RuntimeDirectory=hy2-account
+RuntimeDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/hy2-account /var/lib/hy2-account-witness /run/hy2-account
+MemoryMax=128M
+TasksMax=64
+LimitNOFILE=256
+
+[Install]
+WantedBy=multi-user.target

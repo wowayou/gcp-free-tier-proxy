@@ -1,0 +1,43 @@
+[Unit]
+Description=Pinned official Hysteria 2 with local per-session accounts
+Wants=network-online.target hy2-health.timer
+After=network-online.target hy2-accountd.service gcp-egress-guard.service
+BindsTo=hy2-accountd.service
+StartLimitIntervalSec=300
+StartLimitBurst=2
+
+[Service]
+Type=simple
+User=hysteria
+Group=hysteria
+ExecStartPre=+/usr/local/lib/hy2-account/hy2-account health gate
+ExecStart=/usr/local/lib/hy2-account/hy2-account core-run /usr/local/lib/hysteria/hysteria /etc/hysteria/server.json /run/hysteria/generation.json
+# Unplanned core generations require explicit review; never automatically reset.
+Restart=no
+TimeoutStartSec=15s
+TimeoutStopSec=10s
+KillMode=control-group
+UMask=0027
+RuntimeDirectory=hysteria
+RuntimeDirectoryMode=0750
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/run/hysteria
+MemoryMax=256M
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

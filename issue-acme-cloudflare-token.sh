@@ -15,7 +15,17 @@ FULLCHAIN_PATH="${FULLCHAIN_PATH:-${CERT_DIR}/fullchain.cer}"
 KEY_TYPE="${KEY_TYPE:-ec-256}"
 SERVER="${SERVER:-letsencrypt}"
 DNS_SLEEP="${DNS_SLEEP:-120}"
-RELOAD_CMD="${RELOAD_CMD:-systemctl restart sing-box 2>/dev/null || true}"
+RELOAD_CMD="${RELOAD_CMD:-}"
+if [[ -z "$RELOAD_CMD" ]]; then
+  if [[ -f /etc/hy2-account/config.json ]]; then
+    [[ -x /usr/local/sbin/sync-hysteria-cert ]] || { echo 'HY2 certificate synchronization hook is missing.' >&2; exit 1; }
+    # ACME installs original files first; publish validated private copies for
+    # HY2, then update only the retained sing-box TLS service.
+    RELOAD_CMD="CERT_PATH='$FULLCHAIN_PATH' KEY_PATH='$KEY_PATH' /usr/local/sbin/sync-hysteria-cert && systemctl try-restart sing-box"
+  else
+    RELOAD_CMD="systemctl try-restart sing-box"
+  fi
+fi
 
 prompt_if_empty() {
   local var_name="$1"

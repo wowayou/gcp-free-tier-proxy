@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="15"><title>HY2 用量</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif}body{max-width:1080px;margin:auto;padding:1rem;background:#101827;color:#e5edf9}h1{font-size:1.5rem}h2{font-size:1.15rem}section{background:#1d293b;border:1px solid #334155;border-radius:12px;padding:1rem;margin:1rem 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.cards section{margin:0}.muted,small{color:#b4c2d6;font-size:.85rem}.warning{color:#ffc078}progress{width:100%;height:1.1rem;accent-color:#70acff}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.92rem}th,td{padding:.65rem;text-align:left;border-bottom:1px solid #334155}td small{display:block}ul{padding-left:1.3rem}.number{font-size:1.6rem;font-weight:600}footer{font-size:.85rem;color:#b4c2d6}strong{font-weight:600}
+</style>
+</head>
+<body>
+<h1>HY2 本机用量 · {{.Month}}</h1>
+<p class="muted">只读 · SSH 隧道访问 · 每 15 秒刷新。单位 GiB = 2³⁰ 字节；日期按 America/Los_Angeles。</p>
+{{if .DataError}}<section class="warning"><strong>{{.DataError}}</strong><p>认证应保持关闭，请在 VM 本机核验；此处不把未知用量显示成零。</p></section>{{end}}
+<div class="cards">
+<section>
+<h2>VM 本月总出站</h2>
+{{if .GuardError}}<p class="warning">总量保护不可放行：{{.GuardError}}</p>{{else}}
+<div class="number">{{gib .Guard.Used}} / {{gib .Guard.Limit}} GiB</div>
+<progress aria-label="整机本月额度" value="{{.Guard.Used}}" max="{{.Guard.Limit}}"></progress>
+<p>剩余 {{gib .VMRemaining}} GiB · 警戒 {{gib .Guard.Warn}} GiB</p>{{end}}
+<p>熔断：{{if .Guard.Blocked}}<strong class="warning">已熔断</strong>{{else if .GuardError}}不可核验{{else}}未熔断{{end}}</p>
+<small>保护更新：{{seconds .Guard.Updated}}<br>包含 HY2、Reality/TLS、系统流量与传输开销；不等同于 Google 结算用量。</small>
+</section>
+<section>
+<h2>HY2 本月合计</h2>
+{{if .DataError}}<p class="warning">用量未知</p>{{else}}
+<div class="number">{{gib .Used}} GiB</div>
+<p>上传 {{gib .Tx}} GiB<br>下载 {{gib .Rx}} GiB<br>保守补账 {{gib .Adjustment}} GiB</p>
+<p>在线客户端连接：{{.Online}}<br>配置额度池：{{gib .QuotaPool}} GiB</p>{{end}}
+<small>合计为账户上传＋下载＋明确补账。Reality/TLS 备用不冒充个人 HY2 用量。</small>
+</section>
+<section>
+<h2>健康与门禁</h2>
+<p>{{if .Healthy}}累计采样仍在安全窗口{{else}}<strong class="warning">统计/核心/整机保护不可放行</strong>{{end}}</p>
+<p>认证：{{if .AuthAllowed}}在个人额度允许时放行{{else}}关闭{{end}}<br>官方核心：{{if .CoreLive}}进程标识存活{{else}}不可核验/未运行{{end}}</p>
+{{if .HealthBlocked}}<p class="warning">共享健康故障锁仍在；需 root 核验后恢复。</p>{{end}}
+<small>个人统计起始：{{seconds .Meta.Started}}<br>最后采集：{{nanos .Meta.LastSample}}<br>证书到期：{{seconds .CertificateExpires}}</small>
+{{if .Meta.Reason}}<p class="warning">{{.Meta.Reason}}</p>{{end}}
+{{if .StatsError}}<p class="warning">当前采集异常：{{.StatsError}}</p>{{end}}
+{{if .CertificateError}}<p class="warning">{{.CertificateError}}</p>{{end}}
+</section>
+</div>
+<section>
+<h2>个人月额度</h2>
+{{if not .DataError}}<div class="scroll"><table>
+<thead><tr><th>账户/状态</th><th>已用/额度（GiB）</th><th>上传/下载/补账（GiB）</th><th>在线与封禁</th></tr></thead>
+<tbody>{{range .Users}}
+<tr><td><strong>{{.Name}}</strong><small>{{.Status}}</small></td>
+<td>{{gib .Used}} / {{gib .Quota}}<progress aria-label="{{.Name}} 的本月额度" value="{{.Used}}" max="{{.Quota}}"></progress><small>剩余 {{gib .Remaining}} GiB · {{printf "%.1f" .Percent}}%</small></td>
+<td>{{gib .Tx}} / {{gib .Rx}} / {{gib .Adjustment}}</td>
+<td>{{.Online}} 在线<small>{{.Pending}} 待下发 · {{.Failed}} 失败<br>{{.Issued}} 已下发/待确认离线 · {{.Offline}} 已观察离线<br>本代次签发 {{.Sessions}} / {{.SessionCap}} 会话</small></td></tr>
+{{else}}<tr><td colspan="4">尚无账户；用 root-only 管理命令预置明确额度。</td></tr>{{end}}</tbody>
+</table></div>{{end}}
+<p class="muted">在线数是 HY2 连接实例，不代表物理设备数。空闲连接在下一次转发时消费踢出标记；“已下发”不等于立即离线。未观察上线的已签发会话也会封禁，但不虚报已离线。单人封禁失败不重启代理。</p>
+</section>
+<section>
+<h2>最近日用量</h2>
+<div class="scroll"><table><thead><tr><th>日期</th><th>合计趋势</th><th>上传/下载（GiB）</th></tr></thead><tbody>
+{{range .Days}}<tr><td>{{.Day}}</td><td>{{gib .Total}} GiB<progress aria-label="{{.Day}} 日用量" value="{{.Total}}" max="{{$.DayMax}}"></progress></td><td>{{gib .Tx}} / {{gib .Rx}}</td></tr>
+{{else}}<tr><td colspan="3">暂无可信日采样</td></tr>{{end}}
+</tbody></table></div>
+</section>
+{{if .Gaps}}<section><h2>计量缺口/人工核验记录</h2><ul>{{range .Gaps}}<li>{{.}}</li>{{end}}</ul></section>{{end}}
+<footer>个人额度是每 5 秒检测的软限额，存在采样、踢出和在途窗口；接口失败时封禁可能未完成。跨月增量固定归属采集结束的月份/日期，存在边界误差。整机熔断和共享组件故障可能影响所有人。页面关闭或访问失败本身不停止代理。此页无密码、节点链接、请求目标和原始配置。</footer>
+</body>
+</html>

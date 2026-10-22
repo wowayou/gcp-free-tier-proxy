@@ -1,0 +1,23 @@
+[Unit]
+Description=Independent HY2 shared-accounting health interlock
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/hy2-account/hy2-account health run
+TimeoutStartSec=45s
+StateDirectory=hy2-health
+StateDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/hy2-health
+MemoryMax=64M
+TasksMax=32
+LimitNOFILE=128

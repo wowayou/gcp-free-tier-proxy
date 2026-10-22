@@ -1,14 +1,21 @@
-# GCP Free Tier sing-box Proxy Kit
+# GCP Free Tier Proxy Kit
 
-面向 Google Cloud 免费层 VM 的低成本 sing-box 代理维护包。
+面向 Google Cloud 免费层 VM 的低成本代理维护包。
+
+当前项目有两层状态，不能混为一谈：
+
+- **生产迁移前基线**：`VLESS Reality Vision` 仍是主力；旧 sing-box HY2 仅是一次性试验入口。
+- **已实现、待授权的 HY2 主用账户系统**：官方 Hysteria 2（HY2）独立服务、SQLite 账户/额度、只读用量页和定向封禁。代码已通过本地单元测试与固定版本官方核心的回环集成测试，但**尚未在真实 VM 上部署或迁移**。
+
+HY2 主用的目标不是全局代理，而是把 HY2 作为个人和朋友的受限入口：每个账户有显式月额度，封禁一个账户不重启代理、不影响其他账户的既有连接；Reality/TLS 继续留在 sing-box 作为本人备用。迁移会短暂中断现有连接，必须在明确维护窗口内执行。
 
 当前项目的维护口径是：
 
-- `VLESS Reality Vision` 作为主力 AI 节点。
+- `VLESS Reality Vision` 作为本人备用节点；迁移后 HY2 作为主用入口。
 - `VLESS TCP+TLS` 作为可选证书备用节点。
 - Cloudflare 只做灰云 DNS，不走小黄云、Argo、WARP、CDN 回源。
 - 客户端只把 AI 相关域名走代理，不建议全局流量压到 GCP。
-- VM 内用 `gcp-egress-guard` 在约 `180 GiB/月` 时停止并 mask `sing-box`，避免继续消耗出站额度。
+- VM 内用 `gcp-egress-guard` 在约 `180 GiB/月` 时停止并 mask `sing-box` 与 `hysteria-server`，避免继续消耗出站额度。
 
 ## Current Baseline
 
@@ -17,20 +24,24 @@
 | Google Cloud project | `YOUR_PROJECT_ID` |
 | VM name | `YOUR_VM_NAME` |
 | Zone | `YOUR_ZONE` |
-| 主力节点 | `VLESS Reality Vision` |
-| Reality port | `47370/tcp` |
+| 迁移前生产主力 | `VLESS Reality Vision`，`47370/tcp` |
 | Reality SNI | `apple.com` |
-| HY2 试验入口 | `443/udp`，与 Reality 并行运行 |
+| 迁移前 HY2 试验入口 | sing-box `443/udp`（legacy；完成迁移后必须删除或保持停用） |
+| HY2 目标入口 | 官方 Hysteria 2 独立服务，`443/udp`，每账户独立凭据 |
 | 备用节点 | `VLESS TCP+TLS` |
 | TLS port | 优先 `443/tcp`，冲突时 `8443/tcp` |
 | 证书目录 | `/root/ygkkkca` |
-| 熔断阈值 | `180 GiB/月` |
+| HY2 发布证书 | `/etc/hysteria/certs/current/`（由 root-only 同步钩子发布） |
+| 熔断阈值 | `180 GiB/月`；覆盖 `sing-box` 与 `hysteria-server` |
+| 账户控制 | `hy2-accountd` + SQLite + root-only `hy2-admin` + SSH 隧道只读页 |
 
 ## Read First
 
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md)：完整维护手册和执行命令。
-- [CHOOSING-VLESS-NODES.md](./CHOOSING-VLESS-NODES.md)：Reality、TLS、端口、DNS、防火墙、分流如何选择。
-- [HYSTERIA2-EVALUATION.md](./HYSTERIA2-EVALUATION.md)：Reality 慢速诊断、计费门禁、Hysteria 2 A/B 与回滚标准。
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md)：完整维护手册和执行命令，包含 HY2 账户系统的构建、预检、迁移和回滚。
+- [CHOOSING-VLESS-NODES.md](./CHOOSING-VLESS-NODES.md)：Reality、TLS、HY2、端口、DNS、防火墙、分流如何选择。
+- [HYSTERIA2-EVALUATION.md](./HYSTERIA2-EVALUATION.md)：历史 Reality 慢速诊断、计费门禁、HY2 A/B 与回滚记录；新架构以账户方案为准。
+- [HYSTERIA2-ACCOUNT-PLAN.md](./HYSTERIA2-ACCOUNT-PLAN.md)：HY2 主用、独立账户配额和用量页方案；已实现代码，待授权 VM 迁移。
+- [STAGE-A-ACCEPTANCE.md](./STAGE-A-ACCEPTANCE.md)：本地阶段验收记录、未覆盖项和上线前交叉核验清单。
 - [AGENTS.md](./AGENTS.md)：给后续 AI/维护者的项目边界和执行规则。
 
 ## Files
@@ -44,12 +55,19 @@
 | `create-budget-alert.sh` | Cloud Shell | 创建项目级预算提醒 |
 | `audit-leftovers.sh` | Cloud Shell | 只读检查可能继续计费的残留资源 |
 | `audit-cost-and-usage.sh` | Cloud Shell | 只读核实计费关联、VM 成本属性、预算和当月发送量 |
-| `install-egress-guard.sh` | VM | 安装 180 GiB/月出站流量熔断器 |
+| `install-egress-guard.sh` | VM | 安装月度出站流量熔断器；可同时保护 `sing-box` 与 `hysteria-server` |
+| `egress-guard/runtime.sh` | VM | 熔断器实际运行逻辑；由安装脚本安装到 `/usr/local/sbin` |
+| `egress-guard/generator.sh` | VM | 开机/daemon-reload 时按持久状态 mask 受保护服务 |
+| `download-hysteria-release.sh` | 本地或 VM | 单次下载并校验固定版本官方 HY2 核心；安装器本身不下载 |
+| `install-hy2-account.sh` | VM | 准备官方 HY2、账户控制、SQLite 与 systemd；不迁移、不启动公网 HY2 |
+| `sync-hysteria-cert.sh` | VM | root-only 证书校验与原子发布；由 ACME 续签钩子调用 |
+| `hy2-account/` | 本地构建、VM 运行 | Go 账户控制程序、只读页面、systemd 模板、sing-box HY2 移除工具和回归测试 |
+| `tests/` | 本地 | egress guard 回归测试与固定核心可行性脚本 |
 | `collect-performance-baseline.sh` | VM | 只读采集慢速诊断所需的主机、进程和网络基线 |
-| `issue-acme-cloudflare-token.sh` | VM | 使用 Cloudflare API Token 申请/安装证书 |
+| `issue-acme-cloudflare-token.sh` | VM | 使用 Cloudflare API Token 申请/安装证书，并在已安装 HY2 时调用证书同步钩子 |
 | `add-vless-tls-inbound.sh` | VM | 在现有 sing-box 配置里新增 `VLESS TCP+TLS` 入站 |
-| `add-hysteria2-inbound.sh` | VM | 备份并校验配置后，在现有 sing-box 增加 HY2 入站 |
-| `manage-hysteria2-users.sh` | VM | 安装持久化命令，安全新增、导出、列出或撤销 HY2 用户 |
+| `add-hysteria2-inbound.sh` | VM | **legacy**：旧 sing-box HY2 入站；安装账户后端后拒绝再次创建 |
+| `manage-hysteria2-users.sh` | VM | **legacy**：旧 sing-box HY2 用户管理；安装账户后端后拒绝运行 |
 | `export-vless-links.sh` | VM | 只读导出 `vless://` 分享链接和本地订阅内容 |
 | `verify-singbox-runtime.sh` | VM | 只读诊断 sing-box、端口、证书、熔断器 |
 | `sing-box-client-ai-routing.fragment.json` | 本地客户端 | AI 分流模板 |
@@ -135,15 +153,41 @@ gcloud compute scp \
   --tunnel-through-iap
 ```
 
-在 VM 内执行：
+在 VM 内执行**迁移前基线**（如果尚未安装账户后端）：
 
 ```bash
+# 12 只是示例；必须先用 audit-cost-and-usage.sh 核实本月已用并向上取整。
 sudo INITIAL_USED_GIB=12 LIMIT_GIB=180 SERVICE_NAME=sing-box \
   bash /tmp/install-egress-guard.sh
 sudo HY2_DOMAIN="rr.example.com" bash /tmp/add-hysteria2-inbound.sh
 sudo bash /tmp/add-vless-tls-inbound.sh
 sudo bash /tmp/verify-singbox-runtime.sh
 ```
+
+> 安装 `install-hy2-account.sh` 后，`add-hysteria2-inbound.sh` 和 `manage-hysteria2-users.sh` 会拒绝运行，避免重建不受个人额度保护的旧入口。
+
+## HY2 主用账户系统（已实现，待授权迁移）
+
+完整命令、迁移顺序和回滚见 [IMPLEMENTATION.md](./IMPLEMENTATION.md#hy2-主用账户系统实现已就绪迁移需授权)。先本地构建并测试，不要在 e2-micro 上编译：
+
+```bash
+cd hy2-account
+go test ./...
+# 可选：固定版本官方核心的回环隔离测试，不会接触 VM、公网目标或 systemd
+bash ../download-hysteria-release.sh amd64 /tmp/hysteria
+HY2_BIN=/tmp/hysteria go test -race ./internal/account -run TestPinned -v
+CGO_ENABLED=0 go build -trimpath -o /tmp/hy2-account ./cmd/hy2-account
+```
+
+把 `install-hy2-account.sh`、`sync-hysteria-cert.sh`、`hy2-account/systemd/`、`hy2-account/tools/`、构建好的二进制和已校验的官方 HY2 二进制传到 VM。迁移前必须：
+
+1. 用 `audit-cost-and-usage.sh` 核实本月已用、账单和共享免费额度。
+2. 用 `INITIAL_USED_GIB` 重建/确认熔断器基线，并显式传入 `SERVICE_NAMES="sing-box hysteria-server"`。
+3. 在维护窗口内执行 `install-hy2-account.sh`，导入账户；先不要启动官方 HY2。
+4. 先运行 `sync-hysteria-cert` 发布证书，再删除 sing-box 中的旧 HY2 入站并 `sing-box check`，释放 `443/udp`。随后立即执行 `hy2-admin system arm`、启动 `hysteria-server`、等待采样并 `hy2-admin system activate`。`system arm` 的启动窗口只有约 45 秒，不要提前太久执行。
+5. 验证单人封禁不重启服务、Reality/TLS 仍可用、整机熔断覆盖两个服务。
+
+未完成上述验证前，不要把 UDP 443 的公开入口从旧 sing-box 切换到新服务。
 
 ## 查看客户端分享链接
 
@@ -191,6 +235,16 @@ TLS 节点使用：
 
 证书域名必须能通过 Cloudflare 灰云 DNS 解析到 VM IPv4。不要把这个域名开小黄云。
 
+安装 HY2 账户后端后，`issue-acme-cloudflare-token.sh` 会先调用 root-only 的
+`/usr/local/sbin/sync-hysteria-cert`，校验 SAN、有效期和证书/私钥匹配，再原子发布到：
+
+```text
+/etc/hysteria/certs/current/fullchain.cer
+/etc/hysteria/certs/current/private.key
+```
+
+官方 HY2 每次 TLS 握手读取当前证书，不需要为证书续签重启 HY2。不要放宽 `/root` 或私钥权限。
+
 ## Egress Guard
 
 `install-egress-guard.sh` 会安装：
@@ -213,18 +267,50 @@ TLS 节点使用：
 /sys/class/net/<iface>/statistics/tx_bytes
 ```
 
-达到 `150 GiB` 时写 warning；达到 `180 GiB` 时：
+达到 `150 GiB` 时写 warning；达到 `180 GiB` 时逐一停止并 mask 受保护服务。安装账户后端后应使用：
 
 ```bash
-systemctl stop sing-box
-systemctl mask sing-box
+sudo INITIAL_USED_GIB=12 LIMIT_GIB=180 SERVICE_NAMES="sing-box hysteria-server" \
+  bash /tmp/install-egress-guard.sh
 ```
 
-月份按 Google Cloud 计费边界使用 `America/Los_Angeles` 判断。默认不会在新月自动解除熔断；
-检查 Billing 后执行 `sudo /usr/local/sbin/gcp-egress-guard --resume` 才恢复服务。计数器或状态
-异常时采用 fail-closed（故障时关闭）策略，停止并 mask `sing-box`。
+保护逻辑会逐一执行 `systemctl stop <unit>`，再通过 generator 在开机和 `daemon-reload` 时 mask；某个服务停止失败不会跳过另一个。
 
-## Hysteria 2 试验入口
+月份按 Google Cloud 计费边界使用 `America/Los_Angeles` 判断。默认不会在新月自动解除熔断；检查 Billing 后执行 `sudo /usr/local/sbin/gcp-egress-guard --resume` 才恢复服务。若列表包含 HY2，必须使用 `--resume --no-start` 并单独走账户核验/启动流程。计数器或状态异常时采用 fail-closed（故障时关闭）策略。
+
+## HY2 账户系统
+
+新架构使用官方 `hysteria-server` 独立进程，账户由本机 `hy2-accountd` 管理；sing-box 只保留 Reality/TLS。每个账户有独立密码和月额度，账户名只是显示标签，实际封禁按稳定账户和每条连接独立的会话 ID 执行。
+
+常用命令（root）：
+
+```bash
+sudo hy2-admin status
+sudo hy2-admin user add friend-1 --quota-gib 20
+sudo hy2-admin user list
+sudo hy2-admin user quota friend-1 --gib 30
+sudo hy2-admin user disable friend-1
+sudo hy2-admin user enable friend-1
+sudo hy2-admin user retry-ban friend-1
+sudo hy2-admin user revoke friend-1
+sudo hy2-admin user export friend-1
+```
+
+`add`/`export` 只把节点链接和客户端片段写入 `/root/hy2-credentials/`，不回显密码；通过可信私密渠道交付。`revoke` 是永久墓碑，不能通过删除再新增恢复额度。
+
+只读用量页经 SSH 隧道访问，不在公网开放：
+
+```bash
+ssh -N -L 18082:127.0.0.1:18082 USER@VM
+# 浏览器打开 http://127.0.0.1:18082
+# 用户名/密码见 VM 上 /root/hy2-credentials/page-login.txt
+```
+
+页面的“已下发”表示 `/kick` 标记已写入，不代表所有空闲设备立即离线；封禁接口失败会显示未完成并保留有限重试，不会重启代理。个人额度是每 5 秒采样的软限额，不是结算级硬截断。VM 重启后 HY2 不会自动恢复，需要重新核验并执行 `system arm`/启动/激活。
+
+## 旧 sing-box HY2 入口（legacy）
+
+> 这是一次性试验入口，不是新账户系统的一部分。安装账户后端后，`add-hysteria2-inbound.sh` 和 `manage-hysteria2-users.sh` 会拒绝运行；迁移完成后应删除该入站并保持停用，不能用它绕过个人额度。
 
 `add-hysteria2-inbound.sh` 要求 sing-box `1.11+`，复用现有证书并增加 `443/udp` 入站；
 `443/tcp` 与 `443/udp` 可以同时使用。脚本不会设置 Brutal 带宽值，因此按 BBR 路径开始测试，
@@ -272,7 +358,19 @@ sudo sing-box-hy2-user remove friend-2
 
 ## Client Guidance
 
-Reality 主力节点：
+HY2 主用入口（每账户使用自己导出的凭据）：
+
+```text
+type: hysteria2
+server: 灰云域名或 VM IPv4
+port: 443
+sni: 证书域名
+insecure: false
+network: tcp            # 客户端只转发 TCP 业务；底层仍是 UDP 443
+up/down: 留空           # 不用 Brutal 带宽提示
+```
+
+Reality 备用节点：
 
 ```text
 protocol: vless
@@ -321,6 +419,23 @@ python -m json.tool sing-box-client-vless-tls.fragment.json
 python -m json.tool sing-box-client-hysteria2.fragment.json
 ```
 
+本地 Go 检查（不要先在 VM 上编译）：
+
+```bash
+cd hy2-account
+go vet ./...
+go test ./...
+# 可选：固定版本官方核心回环集成测试
+HY2_BIN=/path/to/verified/hysteria go test -race ./internal/account -run TestPinned -v
+```
+
+本地 Python 回归（不接触 systemd/VM）：
+
+```bash
+python3 -m unittest -q tests.test_egress_guard tests.test_remove_singbox_hy2
+HY2_BIN=/path/to/verified/hysteria python3 tests/hy2_core_isolation.py
+```
+
 VM 检查：
 
 ```bash
@@ -328,12 +443,16 @@ sudo bash /tmp/verify-singbox-runtime.sh
 sudo ss -lntp | grep -E ':(47370|443|8443) '
 sudo ss -lunp | grep ':443 '
 sudo systemctl status sing-box --no-pager
+sudo systemctl status hysteria-server --no-pager
+sudo systemctl status hy2-accountd --no-pager
 sudo systemctl status gcp-egress-guard.timer --no-pager
+sudo hy2-admin status
 ```
 
 ## Safety
 
-- 不要提交 Cloudflare API Token、UUID、Reality private key、证书私钥。
+- 不要提交 Cloudflare API Token、UUID、Reality private key、证书私钥、HY2 账户密码、页面密码、认证/统计密钥或 SQLite 数据库。
+- 不要把旧 sing-box HY2 和新的官方 HY2 账户后端同时作为两套账户真相。
 - 不要长期全局走 GCP 节点。
 - 不要开启 Cloudflare 小黄云、Argo、WARP 或 CDN 回源，除非重新评估成本和路径。
 - 不要把 `403 speed test` 当作唯一故障信号；实际访问和端口握手更重要。

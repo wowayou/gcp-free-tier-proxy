@@ -6,6 +6,11 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
+[[ ! -e /etc/hy2-account/config.json && ! -e /var/lib/hy2-account/migrated && ! -e /usr/local/lib/hy2-account/hy2-account ]] || {
+  echo 'Official HY2 account backend is installed. Refusing to create an unmetered sing-box HY2 inlet; use hy2-admin.' >&2
+  exit 1
+}
+
 SERVICE_NAME="${SERVICE_NAME:-sing-box}"
 SING_BOX_BIN="${SING_BOX_BIN:-}"
 HY2_PORT="${HY2_PORT:-443}"

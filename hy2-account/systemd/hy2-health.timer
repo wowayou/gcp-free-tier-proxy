@@ -1,0 +1,11 @@
+[Unit]
+Description=Check HY2 accounting health locally (no cloud monitoring)
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=5s
+AccuracySec=1s
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

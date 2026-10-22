@@ -424,6 +424,8 @@ main() {
   fi
 
   require_root
+  [[ ! -e /etc/hy2-account/config.json && ! -e /var/lib/hy2-account/migrated && ! -e /usr/local/lib/hy2-account/hy2-account ]] ||
+    fail "Official HY2 account backend is installed. Legacy sing-box user operations are blocked; use sudo hy2-admin."
   case "$command" in
     install)
       require_cmd install
