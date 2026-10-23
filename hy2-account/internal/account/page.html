@@ -1,66 +1,139 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="15"><title>HY2 用量</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="15">
+<title>流量与账户 · HY2</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif}body{max-width:1080px;margin:auto;padding:1rem;background:#101827;color:#e5edf9}h1{font-size:1.5rem}h2{font-size:1.15rem}section{background:#1d293b;border:1px solid #334155;border-radius:12px;padding:1rem;margin:1rem 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.cards section{margin:0}.muted,small{color:#b4c2d6;font-size:.85rem}.warning{color:#ffc078}progress{width:100%;height:1.1rem;accent-color:#70acff}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.92rem}th,td{padding:.65rem;text-align:left;border-bottom:1px solid #334155}td small{display:block}ul{padding-left:1.3rem}.number{font-size:1.6rem;font-weight:600}footer{font-size:.85rem;color:#b4c2d6}strong{font-weight:600}
+:root{color-scheme:light;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#172b4d;background:#f3f6fb;line-height:1.55}
+*{box-sizing:border-box}body{max-width:1120px;margin:auto;padding:28px 24px 36px}a{color:#235eb5;text-decoration:none}a:hover{text-decoration:underline}a:focus-visible,summary:focus-visible{outline:3px solid #387ee5;outline-offset:4px}
+h1,h2,h3,p{margin:0}h1{font-size:1.85rem;letter-spacing:-.04em}h2{font-size:1.2rem}h3{font-size:1.05rem}p+p{margin-top:.5rem}small,.muted{color:#586980;font-size:.84rem}.eyebrow{color:#386599;font-size:.75rem;font-weight:700;letter-spacing:.12em}
+.top,.section-heading,.account-heading,.row{display:flex;align-items:center;justify-content:space-between;gap:12px}.top{margin-bottom:22px}.top p{margin-top:5px}.actions{display:flex;flex-wrap:wrap;gap:8px}.button{display:inline-block;border:1px solid #cbd7e8;border-radius:9px;padding:8px 13px;background:#fff;font-size:.85rem;white-space:nowrap}
+.notice{display:flex;align-items:flex-start;gap:13px;padding:18px 20px;border:1px solid;border-radius:14px;margin-bottom:20px}.notice h2{font-size:1.08rem}.notice p{font-size:.92rem;margin-top:4px;max-width:850px}.dot{width:10px;height:10px;border-radius:50%;background:currentColor;flex:none;margin-top:8px}
+.success{color:#146348;background:#edf9f2;border-color:#b9e1ca}.warning{color:#865006;background:#fff7e6;border-color:#ecd19a}.danger{color:#a22938;background:#fff0f1;border-color:#ecc4ca}.badge{display:inline-block;border:1px solid;border-radius:999px;padding:3px 10px;font-size:.77rem;font-weight:650;white-space:nowrap}
+.overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.panel,.account,.fold{background:#fff;border:1px solid #dce4ef;border-radius:14px;box-shadow:0 3px 12px #172b4d04}.panel{padding:20px}.panel h2{color:#586980;font-size:.9rem;font-weight:600}.number{font-size:2rem;font-weight:750;line-height:1.2;letter-spacing:-.035em;margin:10px 0}.unit{font-size:.86rem;font-weight:500;letter-spacing:0;color:#586980}.panel .muted{margin-top:9px}.row{font-size:.87rem;margin-top:8px}.row strong{font-variant-numeric:tabular-nums}progress{display:block;appearance:none;width:100%;height:9px;margin:12px 0 0;border:0;border-radius:999px;overflow:hidden;background:#e9eef6;accent-color:#387ee5}progress::-webkit-progress-bar{background:#e9eef6;border-radius:999px}progress::-webkit-progress-value{background:#387ee5;border-radius:999px}progress::-moz-progress-bar{background:#387ee5;border-radius:999px}progress.warning::-webkit-progress-value{background:#ce8a1b}progress.danger::-webkit-progress-value{background:#cb4351}progress.warning::-moz-progress-bar{background:#ce8a1b}progress.danger::-moz-progress-bar{background:#cb4351}
+.section-heading{margin:28px 0 13px}.account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.account{padding:20px;border-top:3px solid #7fc7a4}.account.warning-edge{border-top-color:#dcad52}.account.danger-edge{border-top-color:#d8707b}.account h3{overflow-wrap:anywhere;min-width:0}.remaining{margin-top:18px}.remaining .number{margin:4px 0 8px}.usage-line{display:flex;justify-content:space-between;gap:10px;font-size:.85rem;color:#586980;margin-top:7px}.breakdown{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border-top:1px solid #e7edf5;margin-top:16px;padding-top:13px}.breakdown strong{display:block;font-size:1rem;font-variant-numeric:tabular-nums}.account-hint{font-size:.82rem;color:#586980;margin-top:13px}.account details{border-top:1px solid #e7edf5;margin-top:14px;padding-top:11px}.account summary{font-size:.85rem;color:#365e91}.account details p{font-size:.83rem;color:#586980;margin-top:8px}.ban-alert{font-size:.83rem;border:1px solid;border-radius:8px;padding:9px 11px;margin-top:13px}.empty{padding:20px;border:1px dashed #c5d2e3;border-radius:12px;color:#586980}
+.explainer{margin-top:16px;padding:15px 18px;background:#eaf1fb;border:1px solid #cdddf4;border-radius:12px;font-size:.86rem;color:#385c86}.explainer p+p{margin-top:4px}.fold{margin-top:16px;padding:16px 20px}.fold>summary{font-size:.95rem;font-weight:650;cursor:pointer}.fold>summary small{font-weight:400;margin-left:8px}.fold[open]>summary{margin-bottom:14px}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.84rem}th,td{padding:10px;text-align:left;border-bottom:1px solid #e7edf5}th{color:#586980;font-weight:600}td{font-variant-numeric:tabular-nums}.diagnostic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.diagnostic-grid section{border:1px solid #e7edf5;border-radius:10px;padding:14px}.diagnostic-grid h3{margin-bottom:8px}.diagnostic-grid p{font-size:.85rem;overflow-wrap:anywhere}.error{color:#a22938}.record{overflow-wrap:anywhere;font-size:.84rem}ul{padding-left:20px;margin:10px 0}.help p{font-size:.87rem;margin-top:10px}.help strong{color:#264a79}footer{margin-top:22px;font-size:.78rem;color:#586980}footer p+p{margin-top:5px}
+@media(max-width:820px){.overview{grid-template-columns:1fr}.overview .panel{padding:17px 20px}.account-grid{grid-template-columns:1fr}.diagnostic-grid{grid-template-columns:1fr}.number{font-size:1.8rem}}
+@media(max-width:480px){body{padding:20px 14px 28px}.top{align-items:flex-start;flex-direction:column;gap:14px}.notice{padding:15px}.section-heading{align-items:flex-start;flex-direction:column;gap:4px}.panel,.account,.fold{padding:16px}.account-heading{align-items:flex-start}.breakdown{gap:6px}.breakdown small{font-size:.74rem}.breakdown strong{font-size:.9rem}.fold>summary small{display:block;margin-left:16px}.usage-line{font-size:.8rem}}
 </style>
 </head>
 <body>
-<h1>HY2 本机用量 · {{.Month}}</h1>
-<p class="muted">只读 · SSH 隧道访问 · 每 15 秒刷新。单位 GiB = 2³⁰ 字节；日期按 America/Los_Angeles。</p>
-{{if .DataError}}<section class="warning"><strong>{{.DataError}}</strong><p>认证应保持关闭，请在 VM 本机核验；此处不把未知用量显示成零。</p></section>{{end}}
-<div class="cards">
-<section>
-<h2>VM 本月总出站</h2>
-{{if .GuardError}}<p class="warning">总量保护不可放行：{{.GuardError}}</p>{{else}}
-<div class="number">{{gib .Guard.Used}} / {{gib .Guard.Limit}} GiB</div>
-<progress aria-label="整机本月额度" value="{{.Guard.Used}}" max="{{.Guard.Limit}}"></progress>
-<p>剩余 {{gib .VMRemaining}} GiB · 警戒 {{gib .Guard.Warn}} GiB</p>{{end}}
-<p>熔断：{{if .Guard.Blocked}}<strong class="warning">已熔断</strong>{{else if .GuardError}}不可核验{{else}}未熔断{{end}}</p>
-<small>保护更新：{{seconds .Guard.Updated}}<br>包含 HY2、Reality/TLS、系统流量与传输开销；不等同于 Google 结算用量。</small>
+<header class="top">
+<div><div class="eyebrow">HY2 · 私人用量台</div><h1>流量与账户</h1><p class="muted">{{.Month}} 月账本 · 只读 · 每 15 秒刷新</p></div>
+<nav class="actions" aria-label="页面导航"><a class="button" href="#accounts">看账户</a><a class="button" href="#diagnostics">看诊断</a><a class="button" href="/">立即刷新</a></nav>
+</header>
+<main>
+{{$notice := .ConnectionNotice}}
+<section class="notice {{$notice.Tone}}" aria-label="服务端状态">
+<span class="dot" aria-hidden="true"></span><div><h2>{{$notice.Title}}</h2><p>{{$notice.Detail}}</p></div>
 </section>
-<section>
-<h2>HY2 本月合计</h2>
-{{if .DataError}}<p class="warning">用量未知</p>{{else}}
-<div class="number">{{gib .Used}} GiB</div>
-<p>上传 {{gib .Tx}} GiB<br>下载 {{gib .Rx}} GiB<br>保守补账 {{gib .Adjustment}} GiB</p>
-<p>在线客户端连接：{{.Online}}<br>配置额度池：{{gib .QuotaPool}} GiB</p>{{end}}
-<small>合计为账户上传＋下载＋明确补账。Reality/TLS 备用不冒充个人 HY2 用量。</small>
+<div class="overview">
+<section class="panel" aria-label="整机出站保护">
+<h2>整机保护余量</h2>
+{{if .GuardError}}
+<div class="number">不可核验</div><p class="error">未知余量，不显示为 0</p>
+{{else}}
+<div class="number">{{shortgib .VMRemaining}} <span class="unit">GiB</span></div>
+<p class="muted">本月已发送 {{shortgib .Guard.Used}} / {{shortgib .Guard.Limit}} GiB</p>
+<progress class="{{if .Guard.Blocked}}danger{{else if and (gt .Guard.Warn 0) (ge .Guard.Used .Guard.Warn)}}warning{{end}}" aria-label="整机本月已用出站" value="{{.Guard.Used}}" max="{{.Guard.Limit}}"></progress>
+<div class="row"><span>警戒 {{shortgib .Guard.Warn}} GiB</span><span>{{if .Guard.Blocked}}<strong class="error">保护已锁定</strong>{{else}}停止上限 {{shortgib .Guard.Limit}} GiB{{end}}</span></div>
+{{end}}
+<p class="muted">包含 HY2、Reality、系统及传输开销；不是 Google 免费额度或结算余额。</p>
 </section>
-<section>
-<h2>健康与门禁</h2>
-<p>{{if .Healthy}}累计采样仍在安全窗口{{else}}<strong class="warning">统计/核心/整机保护不可放行</strong>{{end}}</p>
-<p>认证：{{if .AuthAllowed}}在个人额度允许时放行{{else}}关闭{{end}}<br>官方核心：{{if .CoreLive}}进程标识存活{{else}}不可核验/未运行{{end}}</p>
-{{if .HealthBlocked}}<p class="warning">共享健康故障锁仍在；需 root 核验后恢复。</p>{{end}}
-<small>个人统计起始：{{seconds .Meta.Started}}<br>最后采集：{{nanos .Meta.LastSample}}<br>证书到期：{{seconds .CertificateExpires}}</small>
-{{if .Meta.Reason}}<p class="warning">{{.Meta.Reason}}</p>{{end}}
-{{if .StatsError}}<p class="warning">当前采集异常：{{.StatsError}}</p>{{end}}
-{{if .CertificateError}}<p class="warning">{{.CertificateError}}</p>{{end}}
+<section class="panel" aria-label="HY2 账户记账">
+<h2>HY2 本月记账</h2>
+{{if .DataError}}
+<div class="number">用量未知</div><p class="error">账本或恢复见证异常，请核验</p>
+{{else}}
+<div class="number">{{shortgib .Used}} <span class="unit">GiB</span></div>
+<div class="row"><span>正常采样 · 上传＋下载</span><strong>{{shortgib .Sampled}} GiB</strong></div>
+<div class="row"><span>保守补账 · 历史/恢复</span><strong>{{shortgib .Adjustment}} GiB</strong></div>
+{{end}}
+<p class="muted">补账也扣个人额度，但不等于实际访问流量，更不等于 GCP 出站账单。</p>
+</section>
+<section class="panel" aria-label="账户额度分配">
+<h2>账户额度池</h2>
+{{if .DataError}}
+<div class="number">不可核验</div><p class="error">不据旧账本估算可分配额度</p>
+{{else}}
+<div class="number">{{shortgib .UnallocatedQuota}} <span class="unit">GiB 未分配</span></div>
+<p class="muted">已占用 {{shortgib .AllocatedQuota}} / {{shortgib .QuotaPool}} GiB</p>
+<progress aria-label="额度池已占用" value="{{.AllocatedQuota}}" max="{{.QuotaPool}}"></progress>
+<div class="row"><span>{{len .Users}} 个账户（含撤销）</span><strong>{{.Online}} 个在线连接</strong></div>
+{{end}}
+<p class="muted">保留已消耗额度，撤销或降额不会抹掉用量；未分配量不是可新增流量的授权。</p>
 </section>
 </div>
-<section>
-<h2>个人月额度</h2>
-{{if not .DataError}}<div class="scroll"><table>
-<thead><tr><th>账户/状态</th><th>已用/额度（GiB）</th><th>上传/下载/补账（GiB）</th><th>在线与封禁</th></tr></thead>
-<tbody>{{range .Users}}
-<tr><td><strong>{{.Name}}</strong><small>{{.Status}}</small></td>
-<td>{{gib .Used}} / {{gib .Quota}}<progress aria-label="{{.Name}} 的本月额度" value="{{.Used}}" max="{{.Quota}}"></progress><small>剩余 {{gib .Remaining}} GiB · {{printf "%.1f" .Percent}}%</small></td>
-<td>{{gib .Tx}} / {{gib .Rx}} / {{gib .Adjustment}}</td>
-<td>{{.Online}} 在线<small>{{.Pending}} 待下发 · {{.Failed}} 失败<br>{{.Issued}} 已下发/待确认离线 · {{.Offline}} 已观察离线<br>本代次签发 {{.Sessions}} / {{.SessionCap}} 会话</small></td></tr>
-{{else}}<tr><td colspan="4">尚无账户；用 root-only 管理命令预置明确额度。</td></tr>{{end}}</tbody>
-</table></div>{{end}}
-<p class="muted">在线数是 HY2 连接实例，不代表物理设备数。空闲连接在下一次转发时消费踢出标记；“已下发”不等于立即离线。未观察上线的已签发会话也会封禁，但不虚报已离线。单人封禁失败不重启代理。</p>
+<section id="accounts" aria-labelledby="accounts-title">
+<div class="section-heading"><h2 id="accounts-title">账户余额</h2><span class="muted">大数字是剩余量 · 上传＋下载＋补账共同扣额</span></div>
+{{if .DataError}}
+<p class="empty">账户用量不可核验，暂不展示余额和在线数。请先处理顶部提示。</p>
+{{else}}
+<div class="account-grid">
+{{range .Users}}
+{{$account := $.UserNotice .}}
+<article class="account {{$account.Tone}}-edge" aria-label="{{.Name}} 账户">
+<div class="account-heading"><h3>{{.Name}}</h3><span class="badge {{$account.Tone}}">{{$account.Title}}</span></div>
+<div class="remaining"><small>本月剩余</small><div class="number">{{shortgib .Remaining}} <span class="unit">GiB</span></div></div>
+<progress class="{{if or .Exhausted (ge .Used .Quota)}}danger{{else if ge .Percent 80.0}}warning{{end}}" aria-label="{{.Name}} 的本月已用额度" value="{{.Used}}" max="{{.Quota}}"></progress>
+<div class="usage-line"><span>已用 {{shortgib .Used}} / 月额度 {{shortgib .Quota}} GiB</span><span>{{printf "%.1f" .Percent}}%</span></div>
+<div class="breakdown"><div><small>正常采样 · GiB</small><strong>{{shortgib .Sampled}}</strong></div><div><small>保守补账 · GiB</small><strong>{{shortgib .Adjustment}}</strong></div><div><small>在线连接</small><strong>{{.Online}}</strong></div></div>
+<p class="account-hint">{{$account.Detail}}</p>
+{{if or .Pending .Failed}}<p class="ban-alert warning">旧连接踢出未完成：{{.Pending}} 待处理 · {{.Failed}} 失败。新认证是否被拒绝看账户状态；失败不重启整个代理。</p>
+{{else if .Issued}}<p class="ban-alert warning">{{.Issued}} 条踢出标记已下发，仍待确认连接关闭；不代表全部设备立即离线。</p>{{end}}
+<details><summary>查看明细与踢出进度</summary>
+<p>账本状态：{{.Status}}<br>上传 {{gib .Tx}} GiB · 下载 {{gib .Rx}} GiB · 保守补账 {{gib .Adjustment}} GiB<br>已用 {{gib .Used}} GiB · 月额度 {{gib .Quota}} GiB · 剩余 {{gib .Remaining}} GiB</p>
+<p>{{.Pending}} 待下发 · {{.Failed}} 失败 · {{.Issued}} 已下发/待确认离线 · {{.Offline}} 已观察离线</p>
+<p>本次核心运行已签发 {{.Sessions}} / {{.SessionCap}} 条会话；包括已离线会话，不是同时在线设备上限。在线数是连接实例，空闲连接可能到下一次转发才关闭。</p>
+</details>
+</article>
+{{else}}<p class="empty">尚无账户。由管理员在 VM 上按已批准的月额度创建，不在网页操作。</p>{{end}}
+</div>
+{{end}}
+<div class="explainer"><p><strong>为什么“记账已用”比实际访问多？</strong> 历史/恢复的保守补账也会扣额度，但不是测速或访问产生的精确流量。上方已将它与正常采样分开。</p><p>个人额度、账户额度池、整机出站保护是三种不同口径，不相互替代；个人还有余额也可能因共享保护暂不能接入。</p></div>
 </section>
-<section>
-<h2>最近日用量</h2>
-<div class="scroll"><table><thead><tr><th>日期</th><th>合计趋势</th><th>上传/下载（GiB）</th></tr></thead><tbody>
+<details class="fold">
+<summary>最近 14 天用量 <small>只含可信上传/下载采样，不含人工补账</small></summary>
+{{if .DataError}}<p class="error">日用量不可核验，暂不展示。</p>{{else}}
+<div class="scroll"><table><thead><tr><th scope="col">日期</th><th scope="col">合计趋势</th><th scope="col">上传 / 下载（GiB）</th></tr></thead><tbody>
 {{range .Days}}<tr><td>{{.Day}}</td><td>{{gib .Total}} GiB<progress aria-label="{{.Day}} 日用量" value="{{.Total}}" max="{{$.DayMax}}"></progress></td><td>{{gib .Tx}} / {{gib .Rx}}</td></tr>
 {{else}}<tr><td colspan="3">暂无可信日采样</td></tr>{{end}}
-</tbody></table></div>
+</tbody></table></div>{{end}}
+</details>
+<details class="fold"{{if or .DataError .GuardError .StatsError .CertificateError .HealthBlocked .Meta.Review .Meta.Hold (not .Healthy) (not .CoreLive)}} open{{end}}>
+<summary>运行诊断 <small>遇到接入问题时展开；本页不执行恢复</small></summary>
+<div class="diagnostic-grid" id="diagnostics">
+<section><h3>认证与采集</h3>
+<p>认证门禁：{{if .AuthAllowed}}开启，仍须满足个人额度/容量{{else}}关闭{{end}}<br>官方核心：{{if .CoreLive}}进程标识存活{{else}}未确认运行{{end}}<br>可信采样：{{if .Healthy}}仍在安全窗口{{else}}不可放行{{end}}<br>共享健康锁：{{if .HealthBlocked}}已锁定{{else}}未锁定{{end}}</p>
+<p>统计起始：{{seconds .Meta.Started}}<br>最后采集：{{nanos .Meta.LastSample}}</p>
+{{if .DataError}}<p class="error">账本/见证：{{.DataError}}</p>{{end}}
+{{if .Meta.Reason}}<p class="record">核验记录：{{.Meta.Reason}}</p>{{end}}
+{{if .StatsError}}<p class="error">当前采集异常：{{.StatsError}}</p>{{end}}
 </section>
-{{if .Gaps}}<section><h2>计量缺口/人工核验记录</h2><ul>{{range .Gaps}}<li>{{.}}</li>{{end}}</ul></section>{{end}}
-<footer>个人额度是每 5 秒检测的软限额，存在采样、踢出和在途窗口；接口失败时封禁可能未完成。跨月增量固定归属采集结束的月份/日期，存在边界误差。整机熔断和共享组件故障可能影响所有人。页面关闭或访问失败本身不停止代理。此页无密码、节点链接、请求目标和原始配置。</footer>
+<section><h3>整机保护与证书</h3>
+<p>整机保护更新：{{seconds .Guard.Updated}}<br>保护状态：{{if .GuardError}}不可核验{{else if .Guard.Blocked}}已锁定{{else}}未锁定{{end}}<br>证书到期：{{seconds .CertificateExpires}}</p>
+{{if .GuardError}}<p class="error">整机保护：{{.GuardError}}</p>{{end}}
+{{if .Guard.Reason}}<p class="record">保护记录：{{.Guard.Reason}}</p>{{end}}
+{{if .CertificateError}}<p class="error">证书：{{.CertificateError}}</p>{{end}}
+<p class="muted">healthy 不包含证书检查。证书异常时，即使认证开启也不能据此断言客户端可用。</p>
+</section>
+</div>
+{{if .Gaps}}<h3 style="margin-top:16px">计量缺口与人工核验记录</h3><ul class="record">{{range .Gaps}}<li>{{.}}</li>{{end}}</ul><p class="muted">历史记录保留，不因恢复健康消失；出现新记录时才结合原因调查。不要据此重复补账。</p>{{end}}
+</details>
+<details class="fold help">
+<summary>使用与分享说明 <small>私密交付，不在网页展示节点凭据</small></summary>
+<p><strong>分享给朋友：</strong>下载管理员准备的私密 .txt 文件，私下发送；朋友在支持 HY2 的客户端导入。不要将链接贴聊天、Issue 或截图，不给朋友管理员页面密码。</p>
+<p><strong>查看自己的用量：</strong>保持本地 SSH 隧道开启，在同一台电脑打开此页，使用页面专用凭据。Cloud Shell 的 localhost 不是本地电脑的 localhost。</p>
+<p><strong>不能连接：</strong>先看顶部共享状态，再看对应账户状态；只有单账户异常时，不重启整个代理。顶部“服务端已就绪”不是公网客户端访问或隔离验收通过。</p>
+<p><strong>额度怎么变：</strong>管理员修改的是月总额度，不是额外增加，也不会清空已用量。跨月不会自动解除手工暂停、永久撤销或共享保护锁。</p>
+</details>
+</main>
+<footer>
+<p>GiB = 2³⁰ 字节；日期/月账本按 America/Los_Angeles（洛杉矶时区）。概览保留两位小数，小于 0.01 的正用量单独标示；精确字节以管理 status JSON 为准。</p>
+<p>个人额度是每 5 秒检测的软限额，存在采样、踢出和在途窗口。跨月增量归采集结束的月份/日期，有边界误差。整机/共享保护可能影响多人；页面关闭或打不开本身不停止代理。</p>
+<p>本页仅通过 SSH 隧道只读访问，无密码、节点链接、请求目标、原始配置或外部资源请求。</p>
+</footer>
 </body>
 </html>

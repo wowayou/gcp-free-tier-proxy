@@ -577,12 +577,15 @@ sudo hy2-admin status
 | 操作 | 命令 |
 | --- | --- |
 | 新建 10 GiB 账户 | `sudo hy2-admin user add friend-1 --quota-gib 10` |
-| 查看全局健康 | `sudo hy2-admin status` |
+| 查看全局健康（原始 JSON） | `sudo hy2-admin status` |
+| 中文余额与状态摘要（新版 CLI） | `sudo hy2-admin status --human` |
 | 查看各账户用量 | `sudo hy2-admin user list` |
 | 观察 60 秒，每 5 秒刷新 | `sudo timeout --foreground 60s watch -n 5 hy2-admin user list` |
 | 最近 50 行 HY2/账户日志 | `sudo journalctl -u hysteria-server -u hy2-accountd -n 50 --no-pager` |
 | 停用一个账户 | `sudo hy2-admin user disable friend-1` |
 | 恢复一个未撤销、未超额账户 | `sudo hy2-admin user enable friend-1` |
+
+`status --human` 是本次新增的易读格式，**仓库已实现，现有 VM 尚未部署新版 CLI/页面**；旧程序继续使用 `status`。它仅向 accountd 发出一次原有 `status` 请求，用 GiB 和中文显示服务端状态、个人余额、正常采样/补账及踢出提醒，不导出凭据、不获取控制锁、不执行 `health run` 或服务操作。默认 `status` 仍是原始 JSON，精确字节与自动化解析不变。
 
 新建成功只显示私密文件路径，分享链接在 `/root/hy2-credentials/friend-1.txt`，通过私密渠道交付，不贴聊天。`user list` 的 used/quota 单位是字节（90 GiB = 96636764160）。`--foreground` 不能省：缺它时 `watch` 在交互终端会被挂起、到时也不退出（已在伪终端复现）。到时退出 124 是正常停止观察，不是代理故障。日志先脱敏。
 
@@ -607,7 +610,17 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18082:127.0.0.1:18082 YOUR_EXIST
 # 首次凭据仅在 VM 的私密管理会话读取：/root/hy2-credentials/page-login.txt
 ```
 
-页面同时展示整机出站、HY2 合计、每账户上传/下载/合计/剩余、在线连接、封禁任务状态、统计新鲜度、证书到期和缺口。在线数是连接实例，不是物理设备数。隧道需保持运行；Cloud Shell 的 `localhost` 不是本地电脑的 `localhost`，不要把在 Cloud Shell 建立的端口转发误认为本地已可访问。页面密码不是节点密码；不把凭据放 URL、命令参数、聊天或截图。
+**新版呈现（仓库已实现，现有 VM 页面尚未更新）：**
+
+- 顶部直接提示服务端是否就绪、认证关闭、共享保护/证书/采集是否异常；“就绪”不是公网客户端访问或多人隔离验收通过。
+- 三张总览卡分清整机保护余量、HY2 本月记账（正常采样＋保守补账）、额度池未分配量。额度池按 `未撤销账户 max(月额度, 已用) + 已撤销账户已用` 计算占用，降额/撤销不抹掉消费；未分配量不是新增流量授权或 Google 免费额度。
+- 每账户优先显示**本月剩余**，用状态标签与进度条表达已启用、余额偏低（≥80%）、暂停、撤销、超额及新连接容量不足。上传/下载、签发会话和踢出明细可展开；待下发/失败/已下发待离线会在卡片直接提醒。
+- 日趋势、运行诊断和使用/私密分享说明折叠显示；“看诊断”可直接展开，异常时诊断默认展开。`DataError` 时隐藏账户、日统计和额度池旧数值；guard 未知时不显示伪零余额。
+- 概览用 GiB 保留两位小数，小于 0.01 的正值显示 `<0.01`；明细保留三位，精确字节以原始 `status` JSON 为准。页面无 JavaScript（浏览器脚本）、外部字体/CDN 或额外网络请求，刷新仍为每 15 秒一次页面 GET。
+
+页面还显示统计新鲜度、证书到期和缺口。在线数是连接实例，不是物理设备数；会话容量是本次核心运行累计签发数量，包含已离线会话，不是同时在线设备限额。隧道需保持运行；Cloud Shell 的 `localhost` 不是本地电脑的 `localhost`，不要把在 Cloud Shell 建立的端口转发误认为本地已可访问。页面密码不是节点密码；不把凭据放 URL、命令参数、聊天或截图，不给朋友管理员页面凭据。
+
+页面内嵌在账户二进制中；Git 同步不会改变 VM 页面。正式更新仍需独立授权的维护窗口与配套检查，不能只为了换界面重跑安装器、`init`、恢复补账或直接重启 accountd（可能通过 BindsTo 停 HY2）。
 
 ### 共享故障、总量熔断和回滚
 

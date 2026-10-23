@@ -133,39 +133,31 @@ friend-1 → 稳定 account_id → session-C、session-D……
 
 只读页面适配电脑和手机，通过 SSH 隧道查看，初版不做公网订阅或朋友自助后台。
 
-页面包含：
+页面包含（新版卡片/中文摘要已在本地实现，现有 VM 尚未部署这一呈现更新）：
 
-- **VM 总览**：本月已用/限额、进度条、剩余量、150 GiB 警戒线、熔断状态、统计更新时间。
-- **HY2 总览**：所有账户合计、本月上传/下载、在线连接数、日用量趋势。
-- **账户表**：名字、上传、下载、合计/额度、进度条、剩余量、在线连接数、账户和封禁任务状态。
-- **健康信息**：采集是否新鲜、统计缺口、核心/控制服务状态、证书到期、需要人工核验的原因。
-- 明确注明在线数代表 HY2 客户端连接实例，不等同于可识别的物理设备数量。
+- **服务端提示**：统计新鲜、认证状态、共享健康锁、整机保护、证书异常；不将本机就绪冒称为公网访问通过。
+- **整机总览**：优先显示保护余量，另列已用/上限、进度、警戒线与更新时间；不等同于 Google 结算/免费额度。
+- **HY2 记账**：合计明确拆为正常采样（上传＋下载）和保守补账；日趋势只显示可信采样，不混入补账。
+- **账户卡片**：名字、剩余量、已用/月额、80% 预警、启用/暂停/撤销/超额标签、在线连接；踢出异常与待离线直接提醒，详细上传/下载/会话数据可展开。
+- **额度池**：占用按未撤销账户 `max(月额, 已用)` 加已撤销账户已用计算，避免降额或撤销后虚增可分配量；未分配量不是追加授权。
+- **诊断与帮助**：统计缺口、证书到期、人工核验原因、SSH/local 区别及私密文件分享说明；错误时展开诊断，账本未知时隐藏旧余额/日统计/额度池。
+- 在线数代表 HY2 连接实例，不是物理设备数；会话容量是本次核心运行累计签发上限，不是同时在线设备上限。
 
 示意（全部为虚构数据）：
 
 ```text
-VM 总出站       48.0 / 180 GiB   [#####---------------] 27%
-HY2 有效流量    42.0 GiB        上传 5.0 / 下载 37.0
+服务端：已就绪（仍需客户端确认）
+整机保护余量    132 / 180 GiB    已发送 48 GiB
+HY2 本月记账     42 GiB         正常采样 40 + 保守补账 2
+额度池未分配     20 / 140 GiB   占用 120 GiB
 
-账户       本月合计 / 额度        剩余       状态
-owner       30.0 / 100 GiB       70.0       正常
-friend-1    12.0 /  20 GiB        8.0       正常
+owner     剩余 70 GiB    已用 30 / 月额 100    已启用
+friend-1  剩余  8 GiB    已用 12 / 月额  20    已启用
 ```
 
-拟提供的命令接口如下，**目前尚不存在**：
+账户命令已实现，操作与安全边界只维护在 `IMPLEMENTATION.md` 的[日常账户操作](./IMPLEMENTATION.md#日常账户操作)和[常用命令速查](./IMPLEMENTATION.md#常用命令速查)。本次新增 `status --human` 用同一次只读请求输出中文/GiB；默认 `status` JSON 和已有 `user list` 字节格式不变。
 
-```text
-sudo hy2-admin user add friend-1 --quota-gib 20
-sudo hy2-admin user list
-sudo hy2-admin user quota friend-1 --gib 30
-sudo hy2-admin user disable friend-1
-sudo hy2-admin user enable friend-1
-sudo hy2-admin user revoke friend-1
-sudo hy2-admin user export friend-1
-sudo hy2-admin status
-```
-
-`enable` 不越过个人额度或全局熔断；撤销保留审计和已用量，不通过删除再新增来重获额度。新增或导出只把节点链接和客户端片段写入 root-only 文件，不回显密码。网页不展示密码、分享链接、目的站或原始配置；将朋友本人的导入文件通过可信私密渠道交付。
+`enable` 不越过个人额度或全局熔断；撤销保留审计和已用量，不通过删除再新增来重获额度。新增或导出只把节点链接和客户端片段写入 root-only 文件，不回显密码。网页不展示密码、分享链接、目的站或原始配置；朋友本人的导入文件通过可信私密渠道交付，不共享管理页面凭据。呈现更新不改变认证/配额/采集/踢出规则，不新增 JavaScript 或外部资源，仍每 15 秒刷新；正式部署另需授权窗口，不为此重装、清账或重跑恢复。
 
 ## 7. 全局保护与故障策略
 
@@ -304,6 +296,7 @@ sudo hy2-admin status
 | `hy2-account/internal/account/store.go` | SQLite schema、账户/凭据、会话、月账本、游标、witness、审计、缺口、备份 |
 | `hy2-account/internal/account/collector.go` | 5 秒累计采样、事务化 delta、代次检查、`/kick` 限次重试 |
 | `hy2-account/internal/account/daemon.go` | 回环认证/页面、root-only Unix socket、签名健康见证、页面缓存 |
+| `hy2-account/internal/account/presentation.go` | 网页/中文摘要的只读状态提示、GiB 概览与额度池占用展示；不改变门禁或账本 |
 | `hy2-account/internal/account/runtime.go` | 固定核心校验、进程代次、ACL、systemd 健康联动、证书导出 |
 | `hy2-account/internal/account/interlock.go` | root arm/health 控制锁和恢复协议标识；完整旧健康决策不能跨过一次 arm |
 | `hy2-account/internal/account/certificate.go` | 离线校验暂存证书/私钥；Go/HY2 SAN 与生效时间规则，保留 >24h 到期余量 |

@@ -130,6 +130,7 @@ VM only:
 - Use `hy2-recover` only with matching recovery-protocol CLI/accountd after a separately authorized paired update; old in-flight health processes must also have exited. The helper persists `attempt/` before arm. Never delete/reuse an attempt or copy old charges to bypass its stop; even an empty attempt means reconcile first.
 - Do not infer recovery charges from `clean`/`unplanned`, a nominal 5-second sampling period, successful prepare-stop, or revoked status. Every account starts at null and requires explicitly reviewed additional bytes, including disabled/revoked accounts; zero needs evidence too.
 - Keep root `health run` and `system arm` serialized by the same persistent-inode control lock across decision, mutation and latch/reload. Never unlink lock files or stop protection timers to bypass contention; `health gate` must remain read-only and lock-free.
+- Keep page and `status --human` presentation read-only; default `status` JSON and exact counters must remain compatible. Unknown ledger/guard data must not become a zero balance or an old green page. Separate sampled usage, conservative adjustments, account-pool allocation and VM egress; do not expose credentials, add browser scripts/CDNs, or imply client access/ban isolation from local readiness.
 - Do not switch traffic to global proxy by default.
 - Do not enable Cloudflare orange cloud, Argo, WARP, CDN, Load Balancer, Cloud NAT, or Cloud DNS as part of routine maintenance.
 - Do not add UDP-heavy protocols by default.

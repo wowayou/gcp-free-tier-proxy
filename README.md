@@ -289,6 +289,8 @@ sudo INITIAL_USED_GIB=12 LIMIT_GIB=180 SERVICE_NAMES="sing-box hysteria-server" 
 
 新架构使用官方 `hysteria-server` 独立进程，账户由本机 `hy2-accountd` 管理；sing-box 只保留 Reality/TLS。每个账户有独立密码和月额度，账户名只是显示标签，实际封禁按稳定账户和每条连接独立的会话 ID 执行。
 
+**更直观的新版（本地已实现，现有 VM 尚未更新）：** 用量页用卡片突出个人剩余额度、80% 预警和接入状态；正常采样与保守补账分开，运行细节折叠。新增 `sudo hy2-admin status --human` 中文摘要，默认 `status` JSON 保持不变；说明和访问步骤见 [常用命令速查](./IMPLEMENTATION.md#常用命令速查) / [用量页](./IMPLEMENTATION.md#用量页)。Git 推送不会更新 VM，不为换界面直接重启 accountd 或重跑恢复。
+
 日常只读检查（**VM SSH**）：
 
 ```bash

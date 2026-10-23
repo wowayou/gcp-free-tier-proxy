@@ -28,9 +28,10 @@ import (
 var pageFiles embed.FS
 
 var pageTemplate = template.Must(template.New("page.html").Funcs(template.FuncMap{
-	"gib":     func(n int64) string { return fmt.Sprintf("%.3f", float64(n)/float64(GiB)) },
-	"seconds": func(n int64) string { return displayTime(n, false) },
-	"nanos":   func(n int64) string { return displayTime(n, true) },
+	"gib":      func(n int64) string { return fmt.Sprintf("%.3f", float64(n)/float64(GiB)) },
+	"shortgib": FormatGiB,
+	"seconds":  func(n int64) string { return displayTime(n, false) },
+	"nanos":    func(n int64) string { return displayTime(n, true) },
 }).ParseFS(pageFiles, "page.html"))
 
 func displayTime(n int64, nanos bool) string {
@@ -464,7 +465,11 @@ func (d *Daemon) publish(now time.Time) error {
 		// Do not leave an old green page in the cache after storage failure.
 		// Rendering remains outside the service-health decision.
 		month, _ := billingTime(now)
-		v = Status{Month: month, Meta: m, Guard: g, DataError: "账户账本不可读；用量未知，不能据旧数字放行", Healthy: false}
+		v = Status{RecoveryProtocol: RecoveryProtocol, Month: month, Meta: m, Guard: g,
+			VMRemaining: max(0, g.Limit-g.Used), DataError: "账户账本不可读；用量未知，不能据旧数字放行", Healthy: false}
+		if guardErr != nil {
+			v.GuardError = guardErr.Error()
+		}
 		v.Meta.Review = true
 	}
 	b, err := json.Marshal(v)

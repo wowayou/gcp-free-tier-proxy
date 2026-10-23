@@ -126,7 +126,7 @@ func run() error {
 	}
 }
 func usage() error {
-	return errors.New("usage: hy2-account serve|init|version|validate-cert|secrets-init|core-run|render-core|health|admin; hy2-admin [--config PATH] user add|list|quota|disable|enable|revoke|rotate|rename|export|retry-ban; status; system arm|activate|prepare-stop|backup")
+	return errors.New("usage: hy2-account serve|init|version|validate-cert|secrets-init|core-run|render-core|health|admin; hy2-admin [--config PATH] user add|list|quota|disable|enable|revoke|rotate|rename|export|retry-ban; status [--human]; system arm|activate|prepare-stop|backup")
 }
 
 func quotaBytes(value string) (int64, error) {
@@ -182,10 +182,13 @@ func admin(cfg account.Config, args []string) error {
 		return usage()
 	}
 	var req account.AdminRequest
+	human := false
 	dir := "/root/hy2-credentials"
 	switch args[0] {
 	case "status":
-		if len(args) != 1 {
+		if len(args) == 2 && args[1] == "--human" {
+			human = true
+		} else if len(args) != 1 {
 			return usage()
 		}
 		req.Action = "status"
@@ -313,6 +316,12 @@ func admin(cfg account.Config, args []string) error {
 		if err != nil {
 			return errors.New("baseline armed but daemon-reload failed")
 		}
+	}
+	if req.Action == "status" && result.Status == nil {
+		return errors.New("accountd returned no status; state unknown")
+	}
+	if human {
+		return writeHumanStatus(os.Stdout, *result.Status)
 	}
 	if result.Status != nil {
 		if req.Action == "list" {
