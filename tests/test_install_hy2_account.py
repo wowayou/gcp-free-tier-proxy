@@ -64,6 +64,33 @@ class InstallerGuardCoverageTests(unittest.TestCase):
         self.assertEqual(self.calls.read_text().split("\n")[0], "is-active --quiet gcp-egress-guard.timer")
 
 
+class InstallerQuotaPoolTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = (ROOT / "install-hy2-account.sh").read_text()
+        start = source.index('QUOTA_POOL_GIB="${QUOTA_POOL_GIB:')
+        end = source.index('\nfor c in python3 sha256sum', start)
+        cls.block = source[start:end]
+
+    def test_explicit_pool_range_and_decimal_parsing(self):
+        for value, expected in (("1", "1"), ("140", "140"), ("150", "150"), ("180", "180"), ("090", "90")):
+            with self.subTest(value=value):
+                r = subprocess.run(["bash", "-euo", "pipefail", "-c", self.block + '\nprintf "%s\\n" "$QUOTA_POOL_GIB"'],
+                                   env=os.environ | {"QUOTA_POOL_GIB": value}, capture_output=True, text=True, timeout=5)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(r.stdout.strip(), expected)
+        for value in ("0", "000", "181", "1800", "-1", "1.5", "NaN", "", "$(id)", " 150"):
+            with self.subTest(value=value):
+                r = subprocess.run(["bash", "-euo", "pipefail", "-c", self.block],
+                                   env=os.environ | {"QUOTA_POOL_GIB": value}, capture_output=True, text=True, timeout=5)
+                self.assertNotEqual(r.returncode, 0)
+
+    def test_installer_ceiling_matches_go_configuration(self):
+        code = (ROOT / "hy2-account/internal/account/config.go").read_text()
+        self.assertIn("const MaxQuotaPoolGiB int64 = 180", code)
+        self.assertIn("10#$QUOTA_POOL_GIB<=180", self.block)
+
+
 class InstallerReadinessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

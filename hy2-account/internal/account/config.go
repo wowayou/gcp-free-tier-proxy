@@ -19,6 +19,10 @@ import (
 )
 
 const GiB int64 = 1 << 30
+
+// This is a configuration ceiling, not a default allocation or a billing
+// allowance. The independently enforced VM egress guard stays at <=180 GiB.
+const MaxQuotaPoolGiB int64 = 180
 const MaxBody = 4096
 const MaxStatsBody = 4 << 20
 
@@ -184,8 +188,8 @@ func (c Config) Validate() error {
 	if net.ParseIP(c.Server) == nil && !hostName.MatchString(c.Server) {
 		return errors.New("invalid server address")
 	}
-	if c.QuotaPoolBytes <= 0 || c.QuotaPoolBytes > 140*GiB {
-		return errors.New("explicit quota pool must be in (0, 140 GiB]; reduce it for a partial month/shared budget")
+	if c.QuotaPoolBytes <= 0 || c.QuotaPoolBytes > MaxQuotaPoolGiB*GiB {
+		return fmt.Errorf("explicit quota pool must be in (0, %d GiB]; allocation requires separate approval and does not replace the VM guard", MaxQuotaPoolGiB)
 	}
 	if c.MaxAccounts < 1 || c.MaxAccounts > 32 || c.MaxSessionsPerUser < 8 || c.MaxSessionsPerUser > 2048 || c.MaxSessionsTotal < c.MaxSessionsPerUser || c.MaxSessionsTotal > 8192 {
 		return errors.New("invalid account/session capacity bounds")

@@ -427,7 +427,7 @@ sudo CONFIRM_LOCAL_INSTALL=yes \
 
 参数说明：
 
-- `QUOTA_POOL_GIB` 必须 `>0` 且 `<=140`；月中上线、其他 VM 用量或账单异常时还要下调。
+- `QUOTA_POOL_GIB` 必须 `>0` 且 `<=180`；140 只是前期保守示例，不是 GCP 上限。当前用户明确授权的目标池为 150 GiB（owner 120 + 朋友 30），并非允许自动用满 180；月中上线、其他 VM 用量或账单异常仍需复核。整机 guard 150/180 GiB 不变。
 - `HY2_SERVER_ADDRESS` 可选；默认等于 `HY2_DOMAIN`，需要 IP 连接配域名 SNI 时再分开设置。
 - 默认回环端口是 auth `18081`、page `18082`、stats `18083`；安装器会检查本机 TCP 冲突。
 - 安装器会创建 `hysteria`/`hy2-account` 系统用户、私密目录、`/etc/hy2-account/config.json`、`/etc/hysteria/server.json` 和四个 systemd 单元。
@@ -569,6 +569,21 @@ sudo hy2-admin status
 - 只有“仅因个人额度耗尽”的账户可以在新月、全局健康且未熔断时重新认证；手工暂停/撤销不会自动恢复。
 - `retry-ban` 只重置目标账户的有限重试预算，不重启服务、不清除禁用状态。
 - `system arm`、`system activate`、`system prepare-stop` 是维护操作，不是普通用户操作；不要用它们给个人解封。
+
+### 已安装节点调整额度池
+
+**不重跑安装器、不改 guard，也不清账。** `140 GiB` 是原部署采用的保守值，新的配置校验和 CLI 支持显式上限 180 GiB；本次仅批准 `150 GiB` 池以及 owner 月总额 `120 GiB`，朋友原 `30 GiB` 不变。GB 与 GiB 不同，本项目命令/账本始终按 GiB（2³⁰ 字节）；这里不是直接管理 Google 免费额度。
+
+额度池在 `/etc/hy2-account/config.json` 的 `quota_pool_bytes`，账户月额在 SQLite。只改配置文件不会更新已运行 accountd；旧程序也会拒绝池大于 140。必须在授权维护中停止 HY2、私密备份账本/独立见证/配置及旧程序，停 accountd 后原子替换配套二进制，并以结构化 JSON 仅更改池字段，保持 root:hy2-account `0640`，然后仅启动 accountd、有限等待就绪。确认 CLI 和运行中 accountd 均为新程序、池为 `161061273600` bytes、全部账本和凭据未变后，再**单次**执行：
+
+```bash
+sudo hy2-admin user quota owner --gib 120
+sudo hy2-admin status
+```
+
+owner 目标月额为 `128849018880` bytes。HY2 已停时，quota 更新可能已落库但旧核心踢出检查返回 incomplete/非零；**先读 status 确认额度，不重复修改**。该账户命令不清零已用、不开认证、不解除共享保护、不重启任何服务。超过实际配置池仍拒绝，降额/撤销后的已消费仍保留。
+
+上述步骤只改变账户程序/池/个人额度，不替代本次停机尾差审核与受控恢复。所有新增补账，包括零，必须有本轮依据并经确认；历史 34 GiB 和此前 50584038211 bytes 不得再次提交。现有 r2 界面候选仅适配旧池，保持封存，不能修改后冒用原哈希。正式部署另用包含此次限额调整的新候选，不改官方核心、Reality、DNS/防火墙、保护单元或费用方案。
 
 ### 常用命令速查
 

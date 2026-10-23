@@ -20,6 +20,8 @@
 
 > 迁移状态（2026-10-23 UTC）：官方 HY2 + 本地账户系统已在授权窗口内完成服务端切换，旧 sing-box HY2 已删除；Reality 保留。官方核心启动、采样、认证激活、VM 本机代理请求及原公网客户端实际访问已通过；**最终只读核验与临时凭据清理通过，本次单账户迁移收尾完成**。后续配套更新与受控恢复已成功，新增补账已提交；用户回贴 `FRIEND_READY`，30 GiB 朋友账户及私密文件准备完成，本次交付未重启服务、未重跑恢复或补账。下载/私下发送、升级后客户端访问及真实多账户封禁隔离仍未确认；故障/重启等不签署全部通过。现场证据与未覆盖项见 `STAGE-A-ACCEPTANCE.md` 第 11、15 节。
 
+> 2026-10-23 UTC 新版呈现部署准备中，用户已授权停止 HY2 并回贴 inactive/MainPID=0、最终采样成功、Reality/accountd 与两个保护 timer 未变；v2 只读停机核对已通过、账本未变。用户之后明确授权 owner 120 GiB、朋友保持 30 GiB、额度池 150 GiB（140 是前期保守设计，不是 GCP 限制）；本地已调整配置/CLI 校验，线上仍为原 90/30/140、新程序未替换。恢复补账仍待本次尾差审核；不把原成功当作现在 HY2 在运行。最新证据见 `STAGE-A-ACCEPTANCE.md` 第 17–18 节。
+
 已保留的本人备用：
 
 ```text
@@ -131,6 +133,7 @@ VM only:
 - Do not infer recovery charges from `clean`/`unplanned`, a nominal 5-second sampling period, successful prepare-stop, or revoked status. Every account starts at null and requires explicitly reviewed additional bytes, including disabled/revoked accounts; zero needs evidence too.
 - Keep root `health run` and `system arm` serialized by the same persistent-inode control lock across decision, mutation and latch/reload. Never unlink lock files or stop protection timers to bypass contention; `health gate` must remain read-only and lock-free.
 - Keep page and `status --human` presentation read-only; default `status` JSON and exact counters must remain compatible. Unknown ledger/guard data must not become a zero balance or an old green page. Separate sampled usage, conservative adjustments, account-pool allocation and VM egress; do not expose credentials, add browser scripts/CDNs, or imply client access/ban isolation from local readiness.
+- Do not increase an account pool or quota without explicit approval. The historical 140 GiB pool is a revisitable conservative allocation, not a GCP limit; code may accept explicit pools up to 180 GiB, but the approved current target is 150 GiB (owner 120, friend 30). Keep the independent 150/180 GiB VM guard unchanged; pool edits require a matched CLI/accountd update and authorized maintenance, never reinstall/init or erase usage.
 - Do not switch traffic to global proxy by default.
 - Do not enable Cloudflare orange cloud, Argo, WARP, CDN, Load Balancer, Cloud NAT, or Cloud DNS as part of routine maintenance.
 - Do not add UDP-heavy protocols by default.

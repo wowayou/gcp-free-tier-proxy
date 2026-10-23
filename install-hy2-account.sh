@@ -25,9 +25,10 @@ ACCOUNT_BINARY="${ACCOUNT_BINARY:?Provide locally built static hy2-account binar
 HYSTERIA_BINARY="${HYSTERIA_BINARY:?Provide checksum-verified official binary; installer never downloads}"
 HY2_DOMAIN="${HY2_DOMAIN:?Set existing certificate domain}"
 HY2_SERVER_ADDRESS="${HY2_SERVER_ADDRESS:-$HY2_DOMAIN}"
-QUOTA_POOL_GIB="${QUOTA_POOL_GIB:?Set explicit <=140 GiB pool after billing/shared-allowance audit}"
+QUOTA_POOL_GIB="${QUOTA_POOL_GIB:?Set explicit <=180 GiB pool after billing/shared-allowance audit}"
 AUTH_PORT="${AUTH_PORT:-18081}" PAGE_PORT="${PAGE_PORT:-18082}" STATS_PORT="${STATS_PORT:-18083}"
-[[ "$QUOTA_POOL_GIB" =~ ^[0-9]+$ ]] && ((QUOTA_POOL_GIB>0 && QUOTA_POOL_GIB<=140)) || exit 1
+[[ "$QUOTA_POOL_GIB" =~ ^[0-9]{1,3}$ ]] && ((10#$QUOTA_POOL_GIB>0 && 10#$QUOTA_POOL_GIB<=180)) || { echo 'Explicit quota pool must be 1..180 GiB; this does not replace the VM egress guard.' >&2; exit 1; }
+QUOTA_POOL_GIB="$((10#$QUOTA_POOL_GIB))"
 for c in python3 sha256sum systemctl install getent useradd groupadd ss runuser openssl flock; do command -v "$c" >/dev/null || { echo "Missing $c" >&2; exit 1; }; done
 [[ -x "$ACCOUNT_BINARY" && -x "$HYSTERIA_BINARY" ]] || exit 1
 [[ -r "$ROOT/recover-hy2.py" ]] || { echo 'Package missing recover-hy2.py; no installation performed.' >&2; exit 1; }

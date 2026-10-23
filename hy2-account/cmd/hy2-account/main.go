@@ -141,8 +141,8 @@ func quotaBytes(value string) (int64, error) {
 		}
 	}
 	r, ok := new(big.Rat).SetString(value)
-	if !ok || r.Sign() <= 0 || r.Cmp(big.NewRat(140, 1)) > 0 {
-		return 0, errors.New("quota GiB must be in (0, 140]")
+	if !ok || r.Sign() <= 0 || r.Cmp(big.NewRat(account.MaxQuotaPoolGiB, 1)) > 0 {
+		return 0, fmt.Errorf("quota GiB must be in (0, %d]", account.MaxQuotaPoolGiB)
 	}
 	r.Mul(r, big.NewRat(account.GiB, 1))
 	n := new(big.Int).Quo(r.Num(), r.Denom()).Int64()
