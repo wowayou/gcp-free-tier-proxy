@@ -53,31 +53,73 @@ udp_port_owner() {
 }
 
 detect_domain() {
-  if [[ -n "${HY2_DOMAIN:-}" ]]; then
-    if ! openssl x509 -in "$CERT_PATH" -noout -checkhost "$HY2_DOMAIN" >/dev/null 2>&1; then
-      echo "HY2_DOMAIN is not covered by the certificate SAN: $HY2_DOMAIN" >&2
-      exit 1
-    fi
-    echo "$HY2_DOMAIN"
-    return
-  fi
+  # Legacy runs before the Go account binary is installed. Decode the leaf
+  # certificate's typed SAN extension; OpenSSL's text/hostname helpers allow
+  # CN fallback, partial wildcards and URI text that merely contains "DNS:".
+  # No dependency install or text fallback: missing cryptography fails closed.
+  python3 - "$CERT_PATH" "${HY2_DOMAIN:-}" <<'PY'
+import ipaddress
+from pathlib import Path
+import re
+import sys
 
-  local domain
-  domain="$({
-    openssl x509 -in "$CERT_PATH" -noout -ext subjectAltName 2>/dev/null |
-      tr ',' '\n' |
-      sed -n 's/.*DNS:\([^ ]*\).*/\1/p' |
-      grep -v '^\*\.' |
-      head -n1 || true
-  })"
+try:
+    from cryptography import x509
+except ImportError:
+    raise SystemExit("Python cryptography is required for legacy HY2 certificate checks; install it explicitly before retrying.")
 
-  if [[ -z "$domain" ]]; then
-    echo "Cannot infer a concrete hostname from a wildcard-only certificate." >&2
-    echo "Set HY2_DOMAIN to a hostname covered by the certificate." >&2
-    exit 1
-  fi
+cert_path, requested = sys.argv[1:]
+try:
+    # load_pem_x509_certificate parses the first (leaf) certificate, not a
+    # matching name in a later chain entry. CN, URI, IP and email are ignored.
+    leaf = x509.load_pem_x509_certificate(Path(cert_path).read_bytes())
+    dns_names = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.DNSName)
+except x509.ExtensionNotFound:
+    raise SystemExit("Certificate has no DNS SAN; CN fallback is not allowed.")
+except (OSError, ValueError, x509.DuplicateExtension, x509.UnsupportedGeneralNameType):
+    raise SystemExit("Cannot read certificate or its SAN extension.")
+if not dns_names:
+    raise SystemExit("Certificate has no DNS SAN; CN, URI, IP and email entries do not count.")
 
-  echo "$domain"
+# Deliberately restrict legacy input to conventional ASCII DNS hostnames.
+# A single trailing dot on input is normalized, as in Go VerifyHostname.
+label = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
+
+def concrete(name):
+    if not name or len(name) > 253 or not name.isascii():
+        return False
+    if not all(label.fullmatch(part.lower()) for part in name.split(".")):
+        return False
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        return True
+    return False
+
+def covers(pattern, domain):
+    if concrete(pattern):
+        return pattern.lower() == domain
+    # Only the complete left-most label can be a wildcard; it matches exactly
+    # one nonempty label, never the apex, nested names or a partial label.
+    if pattern.startswith("*.") and concrete(pattern[2:]):
+        return len(pattern.split(".")) == len(domain.split(".")) and pattern[2:].lower() == domain.split(".", 1)[1]
+    return False
+
+if requested:
+    domain = requested.removesuffix(".")
+    if not concrete(domain):
+        raise SystemExit("HY2_DOMAIN must be a concrete ASCII DNS hostname.")
+    domain = domain.lower()
+    if not any(covers(pattern, domain) for pattern in dns_names):
+        raise SystemExit(f"Certificate DNS SAN does not cover {domain}.")
+else:
+    # Only choose an actual, concrete DNS SAN; do not infer from wildcard,
+    # malformed SAN or URI text, and do not fall back to Common Name.
+    domain = next((name.lower() for name in dns_names if concrete(name)), "")
+    if not domain:
+        raise SystemExit("Cannot infer a concrete hostname from certificate DNS SANs; set HY2_DOMAIN to a covered hostname.")
+print(domain)
+PY
 }
 
 version_at_least_1_11() {

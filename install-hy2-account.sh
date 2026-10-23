@@ -30,6 +30,7 @@ AUTH_PORT="${AUTH_PORT:-18081}" PAGE_PORT="${PAGE_PORT:-18082}" STATS_PORT="${ST
 [[ "$QUOTA_POOL_GIB" =~ ^[0-9]+$ ]] && ((QUOTA_POOL_GIB>0 && QUOTA_POOL_GIB<=140)) || exit 1
 for c in python3 sha256sum systemctl install getent useradd groupadd ss runuser openssl flock; do command -v "$c" >/dev/null || { echo "Missing $c" >&2; exit 1; }; done
 [[ -x "$ACCOUNT_BINARY" && -x "$HYSTERIA_BINARY" ]] || exit 1
+[[ -r "$ROOT/recover-hy2.py" ]] || { echo 'Package missing recover-hy2.py; no installation performed.' >&2; exit 1; }
 for unit in hysteria-server hy2-accountd; do
   if systemctl is-active --quiet "$unit.service"; then echo "$unit is active; upgrades require an authorized maintenance window." >&2; exit 1; fi
 done
@@ -89,10 +90,82 @@ for unit in hy2-accountd.service hysteria-server.service hy2-health.service hy2-
   install -m 0644 "$ROOT/hy2-account/systemd/$unit" "/etc/systemd/system/$unit"
 done
 install -m 0755 "$ROOT/sync-hysteria-cert.sh" /usr/local/sbin/sync-hysteria-cert
+install -m 0755 "$ROOT/recover-hy2.py" /usr/local/sbin/hy2-recover
 install -d -m 0755 /etc/systemd/system-generators
 install -m 0755 "$ROOT/hy2-account/systemd/hy2-health-generator.sh" /etc/systemd/system-generators/hy2-health
 systemctl daemon-reload
 systemctl enable --now hy2-accountd.service
+# Type=simple reports active before the Unix socket/database are ready. Bound
+# the whole readiness phase, not just each request; never restart or re-install
+# on failure. Probe only status, and discard raw output (including errors).
+if ! python3 - <<'PY_READY'
+import json
+import subprocess
+import time
+
+deadline = time.monotonic() + 20
+
+def stop(message):
+    raise SystemExit("Accountd readiness failed: " + message)
+
+def run(args):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        stop("20-second deadline exceeded")
+    return subprocess.run(args, capture_output=True, timeout=min(2, remaining))
+
+def check_service():
+    try:
+        result = run(["systemctl", "show", "hy2-accountd.service", "--no-pager",
+                      "--property=ActiveState,SubState,NRestarts"])
+    except (OSError, subprocess.TimeoutExpired):
+        stop("cannot read service state")
+    if result.returncode != 0:
+        stop("cannot read service state")
+    try:
+        state = dict(line.split("=", 1) for line in result.stdout.decode().splitlines())
+    except (ValueError, UnicodeDecodeError):
+        stop("cannot read service state")
+    if (state.get("ActiveState") != "active" or state.get("SubState") != "running"
+            or state.get("NRestarts") != "0"):
+        stop("service is not stably running without restarts")
+
+while time.monotonic() < deadline:
+    check_service()
+    try:
+        result = run(["/usr/local/sbin/hy2-admin", "status"])
+    except subprocess.TimeoutExpired:
+        result = None
+    except OSError:
+        stop("admin command unavailable")
+    if result is not None and result.returncode == 0:
+        try:
+            status = json.loads(result.stdout)
+        except (ValueError, UnicodeDecodeError):
+            stop("invalid status JSON")
+        if not isinstance(status, dict):
+            stop("invalid status object")
+        accounting = status.get("accounting")
+        if (not isinstance(accounting, dict)
+                or accounting.get("hold") is not True
+                or accounting.get("review") is not True
+                or any(status.get(key) is not False
+                       for key in ("authentication_allowed", "core_live", "healthy"))
+                or status.get("users", "missing") not in (None, [])
+                or status.get("data_error")):
+            stop("expected a held, empty, readable initial account database")
+        check_service()  # Catch a restart during the successful socket request.
+        if time.monotonic() >= deadline:
+            stop("20-second deadline exceeded")
+        break
+    time.sleep(min(1, max(0, deadline - time.monotonic())))
+else:
+    stop("20-second deadline exceeded")
+PY_READY
+then
+  echo 'Preparation incomplete. Preserve installed state; inspect accountd logs/status before continuing. Do not rerun the installer or initialize the database.' >&2
+  exit 1
+fi
 # DO NOT start/enable hysteria or its health timer until guard + accounts +
 # certificate renewal hook have all passed the authorized migration gates.
 echo 'Prepared only: accountd is running but authentication is held closed. No proxy/config/cloud migration performed.'

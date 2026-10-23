@@ -8,14 +8,15 @@ import (
 )
 
 type AdminRequest struct {
-	Action    string           `json:"action"`
-	Name      string           `json:"name,omitempty"`
-	NewName   string           `json:"new_name,omitempty"`
-	Quota     int64            `json:"quota_bytes,omitempty"`
-	Users     []NewUser        `json:"users,omitempty"`
-	Charges   map[string]int64 `json:"charges,omitempty"`
-	Reason    string           `json:"reason,omitempty"`
-	AcceptGap bool             `json:"accept_gap,omitempty"`
+	Action        string           `json:"action"`
+	Name          string           `json:"name,omitempty"`
+	NewName       string           `json:"new_name,omitempty"`
+	Quota         int64            `json:"quota_bytes,omitempty"`
+	Users         []NewUser        `json:"users,omitempty"`
+	Charges       map[string]int64 `json:"charges,omitempty"`
+	Reason        string           `json:"reason,omitempty"`
+	AcceptGap     bool             `json:"accept_gap,omitempty"`
+	ExpectedMonth string           `json:"expected_month,omitempty"`
 }
 
 type AdminResult struct {
@@ -84,6 +85,10 @@ func (d *Daemon) Admin(ctx context.Context, req AdminRequest, now time.Time) Adm
 		}
 		err = d.Store.AddUsers(req.Users, now)
 	case "arm":
+		month, _ := billingTime(now)
+		if req.ExpectedMonth != "" && req.ExpectedMonth != month {
+			return fail(errors.New("billing month changed; review the gap and charges again"))
+		}
 		if _, e := d.Collector.Generation(); e == nil {
 			return fail(errors.New("stop HY2 before approving a new core baseline"))
 		}

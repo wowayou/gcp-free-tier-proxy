@@ -1,13 +1,20 @@
 package main
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"example.com/gcp-free-tier-proxy/hy2-account/internal/account"
 )
@@ -22,6 +29,49 @@ func TestQuotaBytesUsesExactDecimalGiBAndRejectsAmbiguity(t *testing.T) {
 		got, err := quotaBytes(value)
 		if err != nil || got != expected {
 			t.Fatalf("%s: got %d, %v; want %d", value, got, err, expected)
+		}
+	}
+}
+
+func TestValidateCertModeRunsOfflineWithoutAccountConfig(t *testing.T) {
+	// Exercise the real CLI dispatch: no root, config, secrets, database or
+	// accountd are needed for a read-only staged-file check.
+	dir := t.TempDir()
+	key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, ed25519.SeedSize))
+	now := time.Now()
+	cert := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"rr.example.com"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(48 * time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, cert, cert, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+	for path, data := range map[string][]byte{
+		certPath: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		keyPath:  pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+	} {
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := os.Args
+	t.Cleanup(func() { os.Args = before })
+	invoke := func(args ...string) error {
+		os.Args = append([]string{"hy2-account", "validate-cert", "--config", filepath.Join(dir, "missing-config.json")}, args...)
+		return run()
+	}
+	if err := invoke(certPath, keyPath, "rr.example.com"); err != nil {
+		t.Fatalf("valid pair rejected by offline CLI: %v", err)
+	}
+	if err := invoke(certPath, keyPath, "other.example.net"); err == nil || !strings.Contains(err.Error(), "SAN does not cover") {
+		t.Fatalf("wrong hostname accepted: %v", err)
+	}
+	for _, args := range [][]string{{}, {certPath, keyPath}, {certPath, keyPath, "rr.example.com", "extra"}} {
+		if err := invoke(args...); err == nil || !strings.Contains(err.Error(), "validate-cert requires") {
+			t.Fatalf("invalid arguments accepted: %v, %v", args, err)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 # VLESS Reality 慢速诊断与 Hysteria 2 评估门禁
 
-更新时间：2026-10-22
+更新时间：2026-10-23
 
 > **状态说明：** 本文保留 2026-10 的历史实测、计费门禁和 A/B 方法，不再作为部署入口。新的决策是
 > HY2 主用、官方独立服务 + 本地账户额度，见 `HYSTERIA2-ACCOUNT-PLAN.md` 和
@@ -8,8 +8,9 @@
 
 ## 当前结论
 
-新架构代码已实现，但尚未在真实 VM 迁移。每次实际部署、扩大来源范围或切换主用入口前，仍必须
-完成账户级账单与当月流量核验；核验通过后才进入维护窗口。
+2026-10-23 UTC 已在授权窗口内完成官方 HY2 + 账户后端的服务端切换，旧 sing-box HY2 已删除；本机代理请求、原公网客户端实际访问、最终核验与临时凭据清理通过，本次迁移收尾完成。现场证据见 `STAGE-A-ACCEPTANCE.md` 第 11 节；下文历史 A/B 和费用记录不改写为新架构的完整验收。
+
+每次后续部署、扩大来源范围或切换主用入口前，仍必须完成账户级账单与当月流量核验；核验通过后才进入维护窗口。
 
 Hysteria 2 是基于 QUIC（Quick UDP Internet Connections，基于 UDP 的加密传输协议）的代理协议。
 它可能改善高往返时延、存在丢包的 TCP 路径，但不是普遍加速器。当前 VM 是共享核心的
@@ -134,7 +135,7 @@ Billing 为准。后续不需要反复运行大流量测速，优先观察真实
 
 ## 通过门禁后的最小部署（legacy 参考）
 
-> 这一节描述旧 sing-box 内置 HY2 的试验路径，保留作为历史回滚/对照。新的官方独立 HY2 + 账户额度部署见 `IMPLEMENTATION.md`；安装账户后端后，旧 `add-hysteria2-inbound.sh` 和 `sing-box-hy2-user` 会被禁用。
+> 这一节描述旧 sing-box 内置 HY2 的试验路径，保留作为历史回滚/对照。新的官方独立 HY2 + 账户额度部署见 `IMPLEMENTATION.md`；安装账户后端后，旧 `add-hysteria2-inbound.sh` 和 `sing-box-hy2-user` 会被禁用。该脚本通过 Python `cryptography` 结构化读取叶证书的 DNS SAN，只匹配精确域名或完整左标签通配，不回退 CN、部分通配或包含 `DNS:` 的 URI 文本；依赖缺失时拒绝运行，不自动安装。正式证书发布仍以 `sync-hysteria-cert.sh` 的 Go 校验器为准（复验见 `STAGE-A-ACCEPTANCE.md` 第 10 节）。
 
 执行前先把 `audit-cost-and-usage.sh` 输出的本月已用 GiB 向上取整，修复/安装熔断器。示例中的
 `12` 必须替换为真实值：

@@ -8,6 +8,7 @@ CERT_PATH="${CERT_PATH:-/root/ygkkkca/fullchain.cer}"
 KEY_PATH="${KEY_PATH:-/root/ygkkkca/private.key}"
 CERT_ROOT="${CERT_ROOT:-/etc/hysteria/certs}"
 LOCK_PATH="${SYNC_LOCK_PATH:-/run/lock/sync-hysteria-cert.lock}"
+ACCOUNT_BINARY="${HY2_ACCOUNT_BINARY:-/usr/local/lib/hy2-account/hy2-account}"
 DOMAIN="$(python3 - "$CONFIG" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: print(json.load(f)['sni'])
@@ -16,26 +17,41 @@ PY
 [[ -f "$CERT_PATH" && -f "$KEY_PATH" ]] || { echo 'Certificate/key missing.' >&2; exit 1; }
 exec 9>"$LOCK_PATH"
 flock -w 10 9 || exit 1
-# `openssl x509 -checkhost` exits 0 even on mismatch (observed: OpenSSL 3.0); only
-# its exact positive verdict is accepted. SNI is a validated hostname.
-check="$(openssl x509 -in "$CERT_PATH" -noout -checkhost "$DOMAIN")" || exit 1
-[[ "$check" == "Hostname $DOMAIN does match certificate" ]] || { echo "Certificate SAN does not cover $DOMAIN; not published." >&2; exit 1; }
-openssl x509 -in "$CERT_PATH" -noout -checkend 86400 >/dev/null || { echo 'Certificate expires within 24h; not published.' >&2; exit 1; }
-cert_public="$(openssl x509 -in "$CERT_PATH" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
-key_public="$(openssl pkey -in "$KEY_PATH" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
-[[ "$cert_public" == "$key_public" ]] || { echo 'Certificate/key mismatch; not published.' >&2; exit 1; }
+# Stage first: ACME renewal can replace source paths independently of our lock.
+# Only root may write these copies; every validation below reads this pair.
 install -d -o root -g hysteria -m 0750 "$CERT_ROOT"
 version="$(date -u +%Y%m%d-%H%M%S)-$$"
 target="$CERT_ROOT/$version"
+link="$CERT_ROOT/.current-$$"
+published=false
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ "$published" != true ]]; then
+    rm -f -- "$link" || status=1
+    # mv may have committed before it was interrupted/reported an error.
+    # Never remove a version actually referenced by current.
+    if [[ ! "$target" -ef "$CERT_ROOT/current" ]]; then
+      rm -rf -- "$target" || status=1
+    fi
+  fi
+  exit "$status"
+}
+# mkdir refuses an existing version rather than reusing/overwriting it.
+mkdir -m 0750 -- "$target"
+trap cleanup EXIT
 install -d -o root -g hysteria -m 0750 "$target"
 install -o root -g hysteria -m 0640 "$CERT_PATH" "$target/fullchain.cer"
 install -o root -g hysteria -m 0640 "$KEY_PATH" "$target/private.key"
-# Validate staged copy too, not just source paths (renewal can replace them).
-staged_cert="$(openssl x509 -in "$target/fullchain.cer" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
-staged_key="$(openssl pkey -in "$target/private.key" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
-[[ "$staged_cert" == "$staged_key" ]] || { echo 'Staged cert/key mismatch; current version untouched.' >&2; exit 1; }
-ln -s "$version" "$CERT_ROOT/.current-$$"
-mv -Tf "$CERT_ROOT/.current-$$" "$CERT_ROOT/current"
+# Go/HY2 SAN-only hostname and validity rules, plus the existing >24h margin
+# and TLS key-pair parsing. Missing/old validators fail closed; no fallback.
+"$ACCOUNT_BINARY" validate-cert "$target/fullchain.cer" "$target/private.key" "$DOMAIN" || {
+  echo 'Staged certificate/key validation failed; current version untouched.' >&2
+  exit 1
+}
+ln -s "$version" "$link"
+mv -Tf "$link" "$CERT_ROOT/current"
+published=true
 # HY2 reads certificates per handshake; no HY2 restart. Keep at most 3 copies.
 python3 - "$CERT_ROOT" <<'PY'
 import pathlib,re,shutil,sys

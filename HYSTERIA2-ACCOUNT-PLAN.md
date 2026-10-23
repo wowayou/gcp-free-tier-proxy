@@ -1,8 +1,8 @@
 # HY2 主用节点：独立账户、流量配额与用量页实现方案
 
-> 状态：**代码已实现，尚未在真实 VM 部署或迁移。** 本地单元测试、egress guard 回归测试和固定版本官方核心的回环集成测试已通过；生产迁移需单独授权维护窗口。
-> 新目标：后续以 Hysteria 2（HY2）为主用协议；封禁一个账户不能中断其他账户的连接。
-> 当前生产基线仍以 `IMPLEMENTATION.md` 为准；不要把本方案中的服务、命令或界面当作已在生产运行。
+> 状态（2026-10-23 UTC）：**授权生产服务端切换、原 HY2 客户端实际访问、最终只读核验和临时凭据清理均通过，本次单账户迁移收尾完成。** 旧 sing-box HY2 已删除，Reality 保留；TLS 第二备用本次未部署。现场证据与未覆盖项见 `STAGE-A-ACCEPTANCE.md` 第 11 节。
+> 目标：Hysteria 2（HY2）为受限主用协议；封禁一个账户不能中断其他账户的连接。
+> 当前生产基线仍以 `IMPLEMENTATION.md` 为准；不能把本方案的全部验收场景当作已经在生产验证。
 
 ## 1. 决策与边界
 
@@ -289,10 +289,10 @@ sudo hy2-admin status
 - `issue-acme-cloudflare-token.sh`：与现有续签安装钩子协调，安全同步 HY2 证书。
 - `verify-singbox-runtime.sh`：明确只诊断保留的 sing-box 协议；新增 HY2/账户/总量保护诊断，不误判旧 UDP 监听。
 - 客户端片段：继续保持证书验证和 TCP 业务转发，实际凭据不进入仓库。
-- 已同步更新 `README.md`、`IMPLEMENTATION.md`、`CHOOSING-VLESS-NODES.md`、`AGENTS.md`，标明 HY2 主用、Reality/TLS 备用及新的运行上下文；生产迁移前仍保留“已实现、待迁移”的状态说明。
+- 已同步更新 `README.md`、`IMPLEMENTATION.md`、`CHOOSING-VLESS-NODES.md`、`AGENTS.md`，标明 HY2 主用、Reality/TLS 备用及新的运行上下文；生产切换状态按现场证据单独记录，不把本地测试当作完整生产验收。
 - `HYSTERIA2-EVALUATION.md` 保留历史实测和费用依据，更新已被新决策改变的试验阶段说明，不能改写成已经完成新架构验收。
 
-本次完成的是设计、上游能力核查和本地实现验证；代码、测试、systemd 模板和迁移工具已进入仓库，但尚未核实真实 VM、执行生产迁移、完成现场安全审计或创建朋友账户。
+最初实现阶段完成的是设计、上游能力核查和本地实现验证。之后获授权的生产切换、真实证书与客户端访问结果另见 `STAGE-A-ACCEPTANCE.md` 第 11 节；未创建朋友账户，未完成全部现场安全/故障验收。
 
 ## 13. 实现状态（2026-10-22）
 
@@ -300,14 +300,17 @@ sudo hy2-admin status
 
 | 路径 | 作用 |
 | --- | --- |
-| `hy2-account/cmd/hy2-account/` | 单一入口：`serve`、`init`、`secrets-init`、`core-run`、`render-core`、`health`、`admin`；安装为 `hy2-admin` |
+| `hy2-account/cmd/hy2-account/` | 单一入口：`serve`、`init`、`validate-cert`、`secrets-init`、`core-run`、`render-core`、`health`、`admin`；安装为 `hy2-admin` |
 | `hy2-account/internal/account/store.go` | SQLite schema、账户/凭据、会话、月账本、游标、witness、审计、缺口、备份 |
 | `hy2-account/internal/account/collector.go` | 5 秒累计采样、事务化 delta、代次检查、`/kick` 限次重试 |
 | `hy2-account/internal/account/daemon.go` | 回环认证/页面、root-only Unix socket、签名健康见证、页面缓存 |
 | `hy2-account/internal/account/runtime.go` | 固定核心校验、进程代次、ACL、systemd 健康联动、证书导出 |
+| `hy2-account/internal/account/interlock.go` | root arm/health 控制锁和恢复协议标识；完整旧健康决策不能跨过一次 arm |
+| `hy2-account/internal/account/certificate.go` | 离线校验暂存证书/私钥；Go/HY2 SAN 与生效时间规则，保留 >24h 到期余量 |
 | `hy2-account/systemd/` | `hy2-accountd`、`hysteria-server`、`hy2-health` 单元和开机 generator |
 | `hy2-account/tools/remove_singbox_hy2.py` | 结构化移除旧 sing-box HY2，不猜测无关路由 |
 | `install-hy2-account.sh` | 仅准备安装；不迁移、不启动公网 HY2 |
+| `recover-hy2.py` | 手动恢复：未知增量留 null、人工审核、写前持久回执与有界只读等待 |
 | `sync-hysteria-cert.sh` | root-only 证书校验/原子发布 |
 | `download-hysteria-release.sh` | 固定版本官方核心的受限下载与校验 |
 | `egress-guard/` | 多服务保护、开机 mask、启动门禁 |
@@ -342,16 +345,30 @@ bash -n *.sh egress-guard/*.sh hy2-account/systemd/*.sh PASS
 
 交叉核验后修复（阶段 A2，详见 `STAGE-A-ACCEPTANCE.md` 第 8 节）：guard 状态发布失败必须 fail-closed；证书 SAN 不匹配拒绝发布；导入映射与文档格式 `{"users":[...]}` 一致；安装器按精确 unit 名检查 guard 覆盖。
 
+证书补充修复（阶段 A3，详见同文件第 9 节）：A2 仍接受仅 CN、未来生效的证书，且源文件在校验后替换可绕过域名/有效期检查。现改为先复制、再调用账户二进制的离线 `validate-cert`，用 Go/HY2 相同规则完整校验暂存副本后切换 `current`，发布前失败保留旧版本并清理。账户二进制与钩子必须配套更新；本地证书发布 Python 回归增至 17 项（无跳过），另有 Go SAN、时间边界、密钥/PEM 和 CLI 回归。此处 A2 测试数保留为历史记录，A3 实际复验见第 9 节。
+
 官方核心回环测试覆盖：两个账户、目标账户 4 条会话（含多设备、空闲连接和认证竞争）、另一个账户同一 TCP+QUIC 连接持续传输且连接 ID 不变、封禁后新认证拒绝、额度耗尽只封目标、源 IP 不连带、上传/下载方向与非对称流量统计。
 
-仍未完成：
+现场进度（2026-10-23 UTC）：
 
-- 真实 VM、真实证书、真实客户端和 systemd/health timer 的现场验收；本文件不把回环测试当作生产验收。
-- 真实旧用户到 `owner`/朋友账户的归属确认和口令迁移；不得根据旧用户名猜使用者。
-- 真实账单/共享免费额度复核和 140 GiB 额度池的最终首月分配。
-- 迁移窗口、外部连通性测试预算和回滚演练的明确授权。
+- 授权窗口内已完成官方 HY2 切换、真实证书首次发布、systemd 启动/采样/激活和原客户端访问；最终只读核验通过，临时明文口令文件已删除，本次迁移收尾完成。
+- 用户确认唯一旧用户为 owner，沿用现有口令；个人 90 GiB、池 140 GiB，一次保守补记整机历史 34 GiB。真实账单/共享额度已在切换前复核，未来费用仍不可据此保证。
+- 真实多设备/多账户封禁隔离、共享故障/重启、实际续签热加载、容量与恢复演练尚未执行；不得把本地回环测试或一次真实访问当作这些场景的生产验收。
 
 运维步骤以 `IMPLEMENTATION.md` 的 “HY2 主用账户系统（实现已就绪，迁移需授权）” 一节为准；本地验收记录和上线前交叉核验清单见 `STAGE-A-ACCEPTANCE.md`。
+
+### 迁移后恢复补强（2026-10-23，实现及后续配套更新状态）
+
+后续验收证实旧快速恢复段仍可能重复补账，固定 `0/1 GiB` 及“健康 timer 不会重新上锁”的保证不成立，已撤回。现行设计：
+
+- 即使 SQLite 可读，独立 witness 失败也由 root status 的 `data_error` 明确报告，不能只靠 review/hold 判断是否已经提交。
+- 原始 `Store.Arm` 仍为新增字节累加，不改数据库 schema。`hy2-recover` 先绑定当前月份、代次、完整账户状态/用量，人工填写所有增量，再在写入前持久保存单次 `attempt/`。错误、超时和中断都不自动重试写操作。
+- 5 秒采样不是最大未入账时长；最终采样与停机之间可能有尾差，已撤销账户也可能有未关闭会话。所有账户初始值为 null，不自动填 0/1 GiB；零同样要求证据，不能恢复完整额度。
+- root arm CLI 与独立 health run 从读取状态到清锁/停服/daemon-reload 共用 root-only 控制锁；锁竞争限时返回，旧决策不能带过 arm。锁存储损坏时拒绝 arm，health 仍尽力停 HY2，不关闭保护。只读 gate 不创建/获取该锁，避免 systemd 嵌套等待死锁。
+- 恢复只重试只读门禁/基线检查，以单调时钟限定总预算；启动、补账和激活均单次调用。绑定预期计费月，月份变化在 arm 写入前拒绝；启动后也检查月份与新代次。
+- CLI 与运行中的 accountd 都要匹配 recovery protocol 1。原 VM 后续已在授权维护中配套更新，用户只读核对 CLI/status protocol 及二进制/助手哈希通过；其后 09:57 UTC 恢复成功、新增补账已提交。外层收尾 hook 报错不代表补账失败；后续普通交付已回贴 `FRIEND_READY`，指定的 30 GiB 朋友账户与私密文件准备完成，服务 PID 和保护 timer 未变，本次没有再次恢复或补账。下载/私下发送、升级后客户端访问及有连接封禁隔离仍未确认，详见 `STAGE-A-ACCEPTANCE.md` 第 15 节。其他旧节点不能只换助手；配套更新、旧 health 进程退出、accountd 重启和实际恢复仍须独立授权，不能重跑安装器或 init。
+
+操作命令只维护在 `IMPLEMENTATION.md` 的“快速恢复执行段”；实际本地验证及仍未覆盖的生产边界见 `STAGE-A-ACCEPTANCE.md` 第 14 节。
 
 ## 参考依据
 

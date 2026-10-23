@@ -146,7 +146,7 @@ func loopbackAddress(addr string) error {
 }
 
 func (c Config) Validate() error {
-	paths := []string{c.Database, c.Anchor, c.SecretsFile, c.AdminSocket, c.GenerationFile, c.GuardStatusFile, c.HealthFile, c.HealthBlockedFile, c.Certificate, c.BackupDir}
+	paths := []string{c.Database, c.Anchor, c.SecretsFile, c.AdminSocket, c.GenerationFile, c.GuardStatusFile, c.HealthFile, c.HealthBlockedFile, c.HealthBlockedFile + ".lock", c.HealthBlockedFile + ".recovery.lock", c.Certificate, c.BackupDir}
 	seen := map[string]bool{}
 	for _, p := range paths {
 		if !filepath.IsAbs(p) || filepath.Clean(p) != p || seen[p] {

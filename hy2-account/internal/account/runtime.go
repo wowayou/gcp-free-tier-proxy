@@ -205,6 +205,25 @@ func ReadPrivateJSON(path string, target any, limit int64) error {
 // Independent privileged health service: only shared faults reach this code.
 // A failed personal /kick is NOT a shared fault and never invokes systemctl.
 func HealthCheck(cfg Config, secrets Secrets, mode string) error {
+	if mode != "gate" && mode != "run" {
+		return errors.New("health mode must be gate or run")
+	}
+	if mode == "run" {
+		control, err := LockHealthControl(cfg, 2*time.Second)
+		if err != nil {
+			if errors.Is(err, ErrHealthControlBusy) {
+				// No stale decision was read. A bounded arm/shutdown owns the
+				// lock; the unchanged timer will check again on its next tick.
+				return err
+			}
+			// Unwritable storage must not disable protection. Arm also cannot
+			// acquire this lock, so refuse recovery and still attempt shutdown.
+			return fmt.Errorf("health control lock unavailable: %w; %v", err, stopForSharedHealth(cfg))
+		}
+		defer control.Close()
+	}
+	// Read only after acquiring the control lock: an arm may have published
+	// a new bootstrap while a previous health invocation was waiting.
 	now := time.Now()
 	key, err := base64.StdEncoding.DecodeString(secrets.AuthKey)
 	if err != nil {
@@ -227,12 +246,13 @@ func HealthCheck(cfg Config, secrets Secrets, mode string) error {
 		}
 		return nil
 	}
-	if mode != "run" {
-		return errors.New("health mode must be gate or run")
-	}
 	if healthErr == nil && guardErr == nil && (!sharedBlocked(cfg.HealthBlockedFile) || h.Bootstrap) {
 		return nil
 	}
+	return stopForSharedHealth(cfg)
+}
+
+func stopForSharedHealth(cfg Config) error {
 	// Separate durable latch belongs to root, outside accountd write access.
 	var stopErr error
 	if err := AtomicFile(cfg.HealthBlockedFile, []byte("shared health failure; verify accounting before restart\n"), 0600); err != nil {

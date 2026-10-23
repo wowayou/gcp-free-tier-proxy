@@ -18,9 +18,9 @@
 
 ## Current Architecture
 
-> 迁移状态：官方 HY2 主用 + 本地账户系统的代码已实现并完成本地/固定核心测试，但**尚未在真实 VM 部署或迁移**。生产仍以 Reality 为主力，旧 sing-box HY2 只是试验入口。
+> 迁移状态（2026-10-23 UTC）：官方 HY2 + 本地账户系统已在授权窗口内完成服务端切换，旧 sing-box HY2 已删除；Reality 保留。官方核心启动、采样、认证激活、VM 本机代理请求及原公网客户端实际访问已通过；**最终只读核验与临时凭据清理通过，本次单账户迁移收尾完成**。后续配套更新与受控恢复已成功，新增补账已提交；用户回贴 `FRIEND_READY`，30 GiB 朋友账户及私密文件准备完成，本次交付未重启服务、未重跑恢复或补账。下载/私下发送、升级后客户端访问及真实多账户封禁隔离仍未确认；故障/重启等不签署全部通过。现场证据与未覆盖项见 `STAGE-A-ACCEPTANCE.md` 第 11、15 节。
 
-迁移前生产主力：
+已保留的本人备用：
 
 ```text
 VLESS Reality Vision
@@ -30,7 +30,7 @@ flow: xtls-rprx-vision
 service: sing-box
 ```
 
-迁移后目标主用：
+已切换的 HY2 主用入口（原客户端访问已通过）：
 
 ```text
 官方 Hysteria 2（固定 v2.13.0）
@@ -40,7 +40,7 @@ page: 127.0.0.1:18082（SSH 隧道，只读）
 admin: root-only /run/hy2-account/admin.sock
 ```
 
-备用节点：
+可选证书备用节点（本次未部署；现场无 443/8443 TCP 监听）：
 
 ```text
 VLESS TCP+TLS
@@ -50,7 +50,7 @@ key: /root/ygkkkca/private.key
 service: sing-box
 ```
 
-旧并行试验入口（迁移后删除或保持停用）：
+旧并行试验入口（已从 sing-box 删除，不得恢复为无额度入口）：
 
 ```text
 sing-box Hysteria 2
@@ -107,6 +107,7 @@ VM only:
 - `sync-hysteria-cert.sh`
 - `hy2-account/tools/remove_singbox_hy2.py`
 - `hy2-admin` / `hy2-account` runtime commands
+- `recover-hy2.py` / `hy2-recover`（manual reviewed recovery only; matching updated CLI/accountd required）
 - `issue-acme-cloudflare-token.sh`
 - `add-vless-tls-inbound.sh`
 - `add-hysteria2-inbound.sh`（legacy only）
@@ -124,6 +125,11 @@ VM only:
 - Do not install the HY2 account backend while leaving `hysteria-server` outside the guard's `SERVICE_NAMES`.
 - Do not restore an unquotaed legacy HY2 entry after migration, and do not run both legacy `sing-box-hy2-user` and `hy2-admin` as competing account sources.
 - Do not use a full service restart or stop as a fallback for a single-account `/kick` failure; keep the account disabled and retry within the bounded budget.
+- For read-only guard diagnostics, read `/run/gcp-egress-guard/status.json`; `gcp-egress-guard --status` persists counters and may stop/mask on failure. `hy2-account health run` is also service-affecting; do not present it as a read-only probe.
+- `system arm` charges are additive byte increments, not target totals. A CLI error/timeout does not prove a mutation failed; inspect status/audit before retrying, never duplicate the initial 34 GiB backfill. Restarting accountd can stop HY2 via BindsTo; recovery needs an authorized window, not an ordinary restart.
+- Use `hy2-recover` only with matching recovery-protocol CLI/accountd after a separately authorized paired update; old in-flight health processes must also have exited. The helper persists `attempt/` before arm. Never delete/reuse an attempt or copy old charges to bypass its stop; even an empty attempt means reconcile first.
+- Do not infer recovery charges from `clean`/`unplanned`, a nominal 5-second sampling period, successful prepare-stop, or revoked status. Every account starts at null and requires explicitly reviewed additional bytes, including disabled/revoked accounts; zero needs evidence too.
+- Keep root `health run` and `system arm` serialized by the same persistent-inode control lock across decision, mutation and latch/reload. Never unlink lock files or stop protection timers to bypass contention; `health gate` must remain read-only and lock-free.
 - Do not switch traffic to global proxy by default.
 - Do not enable Cloudflare orange cloud, Argo, WARP, CDN, Load Balancer, Cloud NAT, or Cloud DNS as part of routine maintenance.
 - Do not add UDP-heavy protocols by default.
@@ -153,19 +159,21 @@ VM only:
 sing-box check -c <config-path>
 ```
 
-If the check fails, restore the backup.
+If the check fails, restore the last verified safe configuration. During/after HY2 migration, that must be the checked non-HY2 fallback, never a pre-migration backup that would revive unquotaed legacy HY2.
 - For the HY2 account program, keep tests deterministic and use only loopback fixtures; never point tests at production, real certificates, real passwords, or systemd.
 - Run `gofmt` and `go vet` after Go changes. A real-core test must use the checksum-pinned official binary and must not download or start anything during `go test` unless `HY2_BIN` is explicitly supplied.
+- Certificate publication must validate the staged pair with Go/HY2 SAN-only hostname rules, not CN fallback or source-only checks; require notBefore <= now and >24h remaining before switching `current`.
+- The legacy `add-hysteria2-inbound.sh` domain check must parse typed leaf DNS SANs with Python cryptography and use exact/full-left-label wildcard matching. Do not use OpenSSL text, `DNS:` substring, partial wildcards or CN fallback. Missing dependencies fail closed; never auto-install them.
 - Do not weaken the guard, auth, quota, witness, or ACL regression tests to make a change pass.
 
 ## File Responsibilities
 
 - `README.md`: human entrypoint and quick start.
-- `IMPLEMENTATION.md`: operational runbook, including HY2 account build/preflight/migration/rollback.
+- `IMPLEMENTATION.md`: operational runbook, including HY2 account build/preflight/migration/rollback and the canonical daily-maintenance/troubleshooting/recovery procedures. Keep commands and safety boundaries here; README links to them.
 - `CHOOSING-VLESS-NODES.md`: decision guide (HY2 primary, Reality/TLS backup).
 - `HYSTERIA2-EVALUATION.md`: historical cost gate, diagnosis, A/B record, and rollback guide; legacy deployment paths are marked.
 - `HYSTERIA2-ACCOUNT-PLAN.md`: account/isolation design plus implementation status and validation record.
-- `STAGE-A-ACCEPTANCE.md`: local stage acceptance record, exclusions, and pre-launch cross-verification checklist.
+- `STAGE-A-ACCEPTANCE.md`: local stage acceptance record, exclusions, pre-launch checklist, authorized production evidence (§11), and post-migration local acceptance/review findings (§12).
 - `AGENTS.md`: AI maintenance rules.
 - `create-vm-standard-ipv4.sh`: VM creation baseline.
 - `open-vless-reality-port.sh`: Reality firewall.
@@ -176,7 +184,8 @@ If the check fails, restore the backup.
 - `egress-guard/runtime.sh`: runtime accounting/stop/mask/permit/resume logic.
 - `egress-guard/generator.sh`: early boot/daemon-reload mask generator.
 - `download-hysteria-release.sh`: bounded pinned official core download and checksum verification.
-- `install-hy2-account.sh`: preparation-only installer for HY2/accountd; never performs migration.
+- `install-hy2-account.sh`: preparation-only installer for HY2/accountd; never performs migration. Its post-start readiness gate must bound requests/time, confirm stable accountd + readable held initial status, and never restart/reinstall on failure.
+- `recover-hy2.py`: manual reviewed recovery (`hy2-recover`), private one-attempt receipts, bounded read-only polling; never invent charges or retry uncertain writes.
 - `sync-hysteria-cert.sh`: root-only validated certificate publication for HY2.
 - `hy2-account/`: Go controller, page, systemd templates, migration tool, tests.
 - `tests/`: Python guard regressions and standalone pinned-core feasibility gate.
@@ -231,8 +240,15 @@ After editing the Python guard tests or standalone core gate:
 ```bash
 python3 -m unittest -v tests.test_egress_guard
 python3 -m unittest -v tests.test_remove_singbox_hy2
+# Recovery fixtures: temporary files/locks and fake commands/clock only.
+python3 -m unittest -v tests.test_recover_hy2
 # Namespace-root only (unshare -r); throwaway certificates, fake systemctl
+# Certificate tests build the local Go verifier once; Go 1.26+ and cached
+# dependencies are required (GOPROXY=off / GOTOOLCHAIN=local; no downloads).
 python3 -m unittest -v tests.test_sync_hysteria_cert tests.test_install_hy2_account
+# Legacy leaf/SAN checks only; no namespace/root/Go/systemd needed.
+# Requires explicitly provisioned Python cryptography; never downloads it.
+python3 -m unittest -v tests.test_legacy_hy2_certificate
 HY2_BIN=/path/to/verified/hysteria python3 tests/hy2_core_isolation.py
 ```
 

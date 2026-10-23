@@ -73,6 +73,7 @@ type DayView struct {
 	Total int64  `json:"total"`
 }
 type Status struct {
+	RecoveryProtocol   int         `json:"recovery_protocol"`
 	Month              string      `json:"month"`
 	Meta               Meta        `json:"accounting"`
 	Users              []UserView  `json:"users"`
@@ -110,6 +111,9 @@ func (s *Store) View(now time.Time) (Status, error) {
 	if s.fatal != nil {
 		m.Review = true
 		m.Reason = s.fatal.Error()
+		// A readable SQLite file is not proof of a valid durable witness. The
+		// root status API must expose this too, not only the page fallback.
+		v.DataError = s.fatal.Error()
 	}
 	v.Meta = m
 	rows, err := s.db.Query(`SELECT a.name,a.quota,a.disabled,a.revoked,COALESCE(m.tx,0),COALESCE(m.rx,0),COALESCE(m.adjustment,0),COALESCE(m.exhausted,0),
@@ -387,6 +391,7 @@ func (d *Daemon) PageHandler(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) Status(now time.Time) (Status, error) {
 	v, err := d.Store.View(now)
+	v.RecoveryProtocol = RecoveryProtocol
 	if err != nil {
 		return v, err
 	}

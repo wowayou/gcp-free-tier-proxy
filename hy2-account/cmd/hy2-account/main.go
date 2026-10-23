@@ -46,8 +46,15 @@ func run() error {
 	}
 	args = global.Args()
 	if mode == "version" {
-		fmt.Println("hy2-account 1; core", account.CoreVersion, account.CoreCommit)
+		fmt.Printf("hy2-account 1; core %s %s; recovery-protocol=%d\n", account.CoreVersion, account.CoreCommit, account.RecoveryProtocol)
 		return nil
+	}
+	if mode == "validate-cert" {
+		if len(args) != 3 {
+			return errors.New("validate-cert requires cert, key, hostname")
+		}
+		// Offline file validation must work before account config/secrets exist.
+		return account.ValidateCertificateFiles(args[0], args[1], args[2], time.Now())
 	}
 	if mode == "secrets-init" {
 		if os.Geteuid() != 0 {
@@ -119,7 +126,7 @@ func run() error {
 	}
 }
 func usage() error {
-	return errors.New("usage: hy2-account serve|init|version|secrets-init|core-run|render-core|health|admin; hy2-admin [--config PATH] user add|list|quota|disable|enable|revoke|rotate|rename|export|retry-ban; status; system arm|activate|prepare-stop|backup")
+	return errors.New("usage: hy2-account serve|init|version|validate-cert|secrets-init|core-run|render-core|health|admin; hy2-admin [--config PATH] user add|list|quota|disable|enable|revoke|rotate|rename|export|retry-ban; status; system arm|activate|prepare-stop|backup")
 }
 
 func quotaBytes(value string) (int64, error) {
@@ -238,6 +245,7 @@ func admin(cfg account.Config, args []string) error {
 			flags := flag.NewFlagSet("system arm", flag.ContinueOnError)
 			charges := flags.String("charges-file", "", "root-only per-account conservative byte charges JSON")
 			reason := flags.String("reason", "", "reason for verification")
+			month := flags.String("expected-month", "", "reject charges if the billing month changed")
 			accept := flags.Bool("accept-gap", false, "acknowledge initial/missing measurements")
 			if err := flags.Parse(args[2:]); err != nil {
 				return err
@@ -250,11 +258,7 @@ func admin(cfg account.Config, args []string) error {
 			}
 			req.Reason = *reason
 			req.AcceptGap = *accept
-			// Repair is an explicitly authorized global maintenance action. Never
-			// grant user enable/quota an unmask/resume path.
-			if err := verifyCoreStopped(); err != nil {
-				return err
-			}
+			req.ExpectedMonth = *month
 		} else if len(args) != 2 {
 			return usage()
 		}
@@ -279,6 +283,19 @@ func admin(cfg account.Config, args []string) error {
 		req.Users = mapping.Users
 	default:
 		return usage()
+	}
+	if req.Action == "arm" {
+		// Hold the same root-only lock as health run from stopped-core
+		// verification through the response, latch clear and daemon-reload.
+		// Ordinary user operations never acquire it or manage any service.
+		control, err := account.LockHealthControl(cfg, 2*time.Second)
+		if err != nil {
+			return err
+		}
+		defer control.Close()
+		if err := verifyCoreStopped(); err != nil {
+			return err
+		}
 	}
 	result, err := call(cfg, req)
 	if err != nil {
