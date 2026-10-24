@@ -20,7 +20,7 @@
 
 > 迁移状态（2026-10-23 UTC）：官方 HY2 + 本地账户系统已在授权窗口内完成服务端切换，旧 sing-box HY2 已删除；Reality 保留。官方核心启动、采样、认证激活、VM 本机代理请求及原公网客户端实际访问已通过；**最终只读核验与临时凭据清理通过，本次单账户迁移收尾完成**。后续配套更新与受控恢复已成功，新增补账已提交；用户回贴 `FRIEND_READY`，30 GiB 朋友账户及私密文件准备完成，本次交付未重启服务、未重跑恢复或补账。下载/私下发送、升级后客户端访问及真实多账户封禁隔离仍未确认；故障/重启等不签署全部通过。现场证据与未覆盖项见 `STAGE-A-ACCEPTANCE.md` 第 11、15 节。
 
-> 2026-10-23 UTC 新版呈现部署准备中，用户已授权停止 HY2 并回贴 inactive/MainPID=0、最终采样成功、Reality/accountd 与两个保护 timer 未变；v2 只读停机核对已通过、账本未变。用户之后明确授权 owner 120 GiB、朋友保持 30 GiB、额度池 150 GiB（140 是前期保守设计，不是 GCP 限制）；本地已调整配置/CLI 校验，线上仍为原 90/30/140、新程序未替换。恢复补账仍待本次尾差审核；不把原成功当作现在 HY2 在运行。最新证据见 `STAGE-A-ACCEPTANCE.md` 第 17–18 节。
+> 最新状态（2026-10-24 UTC）：用户已在终端接受本次新增字节并回贴 **`R3_RECOVERED / auth=true / healthy=true / core_live=true`**。新版页面、owner120 GiB/朋友30 GiB/池150 GiB已生效，owner当时剩37.857769 GiB；本次仅一次恢复，owner新增保守补账1073744573 bytes、朋友0，原历史与凭据保留。Reality PID未变、保护timer通过助手检查，整机150/180 GiB不变。**不要重跑r3/恢复/arm或重复本次补账，不重启accountd；朋友继续原链接。** 保留review/attempt/recovered回执、审计和私密交付文件；客户端实际访问、真实多人封禁隔离等仍未回贴确认。本次维护服务端收尾，现场证据见 `STAGE-A-ACCEPTANCE.md` 第18–19节。
 
 已保留的本人备用：
 
@@ -128,7 +128,7 @@ VM only:
 - Do not restore an unquotaed legacy HY2 entry after migration, and do not run both legacy `sing-box-hy2-user` and `hy2-admin` as competing account sources.
 - Do not use a full service restart or stop as a fallback for a single-account `/kick` failure; keep the account disabled and retry within the bounded budget.
 - For read-only guard diagnostics, read `/run/gcp-egress-guard/status.json`; `gcp-egress-guard --status` persists counters and may stop/mask on failure. `hy2-account health run` is also service-affecting; do not present it as a read-only probe.
-- `system arm` charges are additive byte increments, not target totals. A CLI error/timeout does not prove a mutation failed; inspect status/audit before retrying, never duplicate the initial 34 GiB backfill. Restarting accountd can stop HY2 via BindsTo; recovery needs an authorized window, not an ordinary restart.
+- `system arm` charges are additive byte increments, not target totals. A CLI error/timeout does not prove a mutation failed; inspect status/audit before retrying, never duplicate the initial 34 GiB backfill, the later 50584038211-byte charge, or the r3 1073744573-byte charge. Restarting accountd can stop HY2 via BindsTo; recovery needs an authorized window, not an ordinary restart.
 - Use `hy2-recover` only with matching recovery-protocol CLI/accountd after a separately authorized paired update; old in-flight health processes must also have exited. The helper persists `attempt/` before arm. Never delete/reuse an attempt or copy old charges to bypass its stop; even an empty attempt means reconcile first.
 - Do not infer recovery charges from `clean`/`unplanned`, a nominal 5-second sampling period, successful prepare-stop, or revoked status. Every account starts at null and requires explicitly reviewed additional bytes, including disabled/revoked accounts; zero needs evidence too.
 - Keep root `health run` and `system arm` serialized by the same persistent-inode control lock across decision, mutation and latch/reload. Never unlink lock files or stop protection timers to bypass contention; `health gate` must remain read-only and lock-free.

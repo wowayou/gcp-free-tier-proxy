@@ -2,12 +2,12 @@
 
 面向 Google Cloud 免费层 VM 的低成本代理维护包。
 
-当前状态（2026-10-23 UTC）：
+当前状态（2026-10-24 UTC）：
 
 - **服务端已切换**：官方 Hysteria 2（HY2）v2.13.0 + `hy2-accountd` 已启动、采样并激活认证，VM 本机代理请求返回 204；旧 sing-box HY2 已删除，Reality 保留。
 - **客户端与迁移收尾已通过**：用户确认公网 HY2 实际访问正常，最终只读核验通过、临时明文口令文件已删除；不把本次成功当作全部故障/隔离/恢复验收。现场记录与其他未覆盖项见 [STAGE-A-ACCEPTANCE.md 第 11 节](./STAGE-A-ACCEPTANCE.md#11-授权生产切换记录2026-10-23-utc)。
-- **当日后续升级与交付准备**：受控恢复已成功，新增保守补账已提交；随后用户回贴 `FRIEND_READY`，30 GiB 朋友账户已创建、私密链接文件已准备，三个服务 PID 未变、两个保护 timer 仍 active，未再次恢复或补账。owner 暂保留 90 GiB、当时剩余约 8.86 GiB；下载与私下发送、升级后实际客户端访问及有连接的多人封禁隔离仍待确认。详见 `STAGE-A-ACCEPTANCE.md` 第 15 节。
-- **新版界面部署状态**：用户已授权停止 HY2 并回贴停机确认，Reality/accountd 与两个保护 timer 未变；v2 只读核对已通过、账本未变。用户随后明确要求 **owner 120 GiB、朋友保持 30 GiB、额度池 150 GiB**，新的本地校验允许显式池至 180 GiB；线上尚未应用，仍为原 90/30/140。补账尚未审核，不重复已提交增量；详见 `STAGE-A-ACCEPTANCE.md` 第 17–18 节。
+- **10 月 23 日升级与交付记录**：受控恢复已成功，新增保守补账已提交；随后用户回贴 `FRIEND_READY`，30 GiB 朋友账户已创建、私密链接文件已准备，三个服务 PID 未变、两个保护 timer 仍 active，未再次恢复或补账。owner 当时为 90 GiB、剩余约 8.86 GiB；下载与私下发送、升级后实际客户端访问及有连接的多人封禁隔离仍待确认。详见 `STAGE-A-ACCEPTANCE.md` 第 15 节。
+- **新版页面、配额与服务端恢复已通过**：用户回贴 `R3_RECOVERED`，认证开启、统计健康、核心运行；**owner 120 GiB、朋友 30 GiB、池 150 GiB**，owner 当时剩余 **37.857769 GiB**。本次终端审核后仅恢复一次：owner 新增保守补账1073744573 bytes、朋友0，原用量/历史补账保留；Reality PID 和保护 timer 正常、整机仍为150/180 GiB。**朋友沿用原链接/密码，不重新创建或旋转凭据**；本次恢复后的真实客户端访问仍未回贴确认，不冒称多人隔离/所有故障通过。详见 `STAGE-A-ACCEPTANCE.md` 第18–19节；不要重跑部署或恢复。
 
 HY2 主用的目标不是全局代理，而是把 HY2 作为个人和朋友的受限入口：每个账户有显式月额度，封禁一个账户不重启代理、不影响其他账户的既有连接；Reality/TLS 继续留在 sing-box 作为本人备用。迁移会短暂中断现有连接，必须在明确维护窗口内执行。
 
@@ -36,6 +36,7 @@ HY2 主用的目标不是全局代理，而是把 HY2 作为个人和朋友的�
 | HY2 发布证书 | `/etc/hysteria/certs/current/`（由 root-only 同步钩子发布） |
 | 熔断阈值 | `180 GiB/月`；覆盖 `sing-box` 与 `hysteria-server` |
 | 账户控制 | `hy2-accountd` + SQLite + root-only `hy2-admin` + SSH 隧道只读页 |
+| 已批准月额度 | owner `120 GiB`、朋友 `30 GiB`、账户池 `150 GiB`；已用量/补账保留 |
 
 ## Read First
 
@@ -290,7 +291,7 @@ sudo INITIAL_USED_GIB=12 LIMIT_GIB=180 SERVICE_NAMES="sing-box hysteria-server" 
 
 新架构使用官方 `hysteria-server` 独立进程，账户由本机 `hy2-accountd` 管理；sing-box 只保留 Reality/TLS。每个账户有独立密码和月额度，账户名只是显示标签，实际封禁按稳定账户和每条连接独立的会话 ID 执行。
 
-**更直观的新版（本地已实现，现有 VM 尚未更新）：** 用量页用卡片突出个人剩余额度、80% 预警和接入状态；正常采样与保守补账分开，运行细节折叠。新增 `sudo hy2-admin status --human` 中文摘要，默认 `status` JSON 保持不变；说明和访问步骤见 [常用命令速查](./IMPLEMENTATION.md#常用命令速查) / [用量页](./IMPLEMENTATION.md#用量页)。Git 推送不会更新 VM，不为换界面直接重启 accountd 或重跑恢复。
+**更直观的新版（2026-10-24 页面与服务端恢复通过）：** 用量页用卡片突出个人剩余额度、80% 预警和接入状态；正常采样与保守补账分开，运行细节折叠。新增 `sudo hy2-admin status --human` 中文摘要，默认 `status` JSON 保持不变；说明和访问步骤见 [常用命令速查](./IMPLEMENTATION.md#常用命令速查) / [用量页](./IMPLEMENTATION.md#用量页)。Git 推送不会更新 VM，不为换界面直接重启 accountd 或重跑恢复。
 
 **账户额度池可调整，不是 GCP 限制：** 新版本允许管理员按授权配置至多 180 GiB，本次目标为 150 GiB，整机 guard 仍为警戒 150/停止 180 GiB。调整池需要已授权的账户程序/配置更新，不能直接重跑安装器；流程见[已安装节点调整额度池](./IMPLEMENTATION.md#已安装节点调整额度池)。
 

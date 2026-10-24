@@ -1,6 +1,6 @@
 # Google Cloud 免费层代理节点最终维护手册
 
-更新时间：2026-10-23
+更新时间：2026-10-24
 
 这份手册是当前项目的维护口径：Google Cloud 免费层 VM 用于受限代理，不做全局代理，不走
 Cloudflare 小黄云、Argo、WARP、CDN 回源。
@@ -591,16 +591,23 @@ owner 目标月额为 `128849018880` bytes。HY2 已停时，quota 更新可能�
 
 | 操作 | 命令 |
 | --- | --- |
-| 新建 10 GiB 账户 | `sudo hy2-admin user add friend-1 --quota-gib 10` |
-| 查看全局健康（原始 JSON） | `sudo hy2-admin status` |
-| 中文余额与状态摘要（新版 CLI） | `sudo hy2-admin status --human` |
-| 查看各账户用量 | `sudo hy2-admin user list` |
+| 中文余额与健康摘要（首选） | `sudo hy2-admin status --human` |
+| 精确状态（原始 JSON） | `sudo hy2-admin status` |
+| 查看各账户用量（字节） | `sudo hy2-admin user list` |
 | 观察 60 秒，每 5 秒刷新 | `sudo timeout --foreground 60s watch -n 5 hy2-admin user list` |
+| 整机出站保护（只读文件） | `sudo python3 -m json.tool /run/gcp-egress-guard/status.json` |
 | 最近 50 行 HY2/账户日志 | `sudo journalctl -u hysteria-server -u hy2-accountd -n 50 --no-pager` |
-| 停用一个账户 | `sudo hy2-admin user disable friend-1` |
+| 服务状态（只读） | `sudo systemctl status hysteria-server hy2-accountd sing-box --no-pager` |
+| 设置该账户月总额30 GiB | `sudo hy2-admin user quota friend-1 --gib 30` |
+| 暂停一个账户 | `sudo hy2-admin user disable friend-1` |
 | 恢复一个未撤销、未超额账户 | `sudo hy2-admin user enable friend-1` |
+| 重新导出原凭据（不换密码） | `sudo hy2-admin user export friend-1` |
+| 数据库私密快照（非完整灾备） | `sudo hy2-admin system backup` |
+| 新建10 GiB账户（须有已批准池余量） | `sudo hy2-admin user add friend-1 --quota-gib 10` |
 
-`status --human` 是本次新增的易读格式，**仓库已实现，现有 VM 尚未部署新版 CLI/页面**；旧程序继续使用 `status`。它仅向 accountd 发出一次原有 `status` 请求，用 GiB 和中文显示服务端状态、个人余额、正常采样/补账及踢出提醒，不导出凭据、不获取控制锁、不执行 `health run` 或服务操作。默认 `status` 仍是原始 JSON，精确字节与自动化解析不变。
+`status --human` 是本次新增的易读格式，**2026-10-24 r3 账户程序/页面及服务端恢复已通过**；其他未更新的旧节点继续使用 `status`。它仅向 accountd 发出一次原有 `status` 请求，用 GiB 和中文显示服务端状态、个人余额、正常采样/补账及踢出提醒，不导出凭据、不获取控制锁、不执行 `health run` 或服务操作。默认 `status` 仍是原始 JSON，精确字节与自动化解析不变。
+
+**本次已有朋友继续使用原HY2链接/密码，无需重建、重新导入或rotate。** `export`只是再次导出同一份凭据；只有明确批准的密码轮换才需要重新交付。当前已批准池150 GiB已分配为owner120+朋友30，新增/扩额前先核对池占用；不要自动扩大池或降低朋友额度。上表quota设置的是月总额，不是额外增加，也不清已用；失败/超时先查status，不能以重启全服兜底单人问题。
 
 新建成功只显示私密文件路径，分享链接在 `/root/hy2-credentials/friend-1.txt`，通过私密渠道交付，不贴聊天。`user list` 的 used/quota 单位是字节（90 GiB = 96636764160）。`--foreground` 不能省：缺它时 `watch` 在交互终端会被挂起、到时也不退出（已在伪终端复现）。到时退出 124 是正常停止观察，不是代理故障。日志先脱敏。
 
@@ -625,7 +632,7 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18082:127.0.0.1:18082 YOUR_EXIST
 # 首次凭据仅在 VM 的私密管理会话读取：/root/hy2-credentials/page-login.txt
 ```
 
-**新版呈现（仓库已实现，现有 VM 页面尚未更新）：**
+**新版呈现（2026-10-24 原VM页面与服务端恢复通过，客户端实际访问仍待确认）：**
 
 - 顶部直接提示服务端是否就绪、认证关闭、共享保护/证书/采集是否异常；“就绪”不是公网客户端访问或多人隔离验收通过。
 - 三张总览卡分清整机保护余量、HY2 本月记账（正常采样＋保守补账）、额度池未分配量。额度池按 `未撤销账户 max(月额度, 已用) + 已撤销账户已用` 计算占用，降额/撤销不抹掉消费；未分配量不是新增流量授权或 Google 免费额度。
@@ -660,7 +667,7 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18082:127.0.0.1:18082 YOUR_EXIST
 
 ### 当前限制
 
-- 授权服务端切换、真实证书首次发布、原公网客户端实际访问和最终只读核验已通过，临时明文口令文件已删除，本次单账户迁移收尾完成。实际续签后的热加载、共享故障/重启/恢复演练和容量验证仍未执行，不能把本机请求成功当作全部现场验收；见 `STAGE-A-ACCEPTANCE.md` 第 11 节。
+- 初次授权迁移、原客户端访问与收尾已通过；后续r1/r3授权维护恢复也有服务端成功回贴。r3后真实客户端/多人隔离、共享故障/VM重启、备份恢复、实际续签热加载与容量仍未验收，不把一次维护恢复当作全部故障演练；见 `STAGE-A-ACCEPTANCE.md` 第11、15、19节。
 - VM 重启后 HY2 不会自动恢复：内存统计已丢失，`health gate` 和持久状态会保持关闭，必须重新核对 guard/账本后再执行 `system arm`、启动核心和 `system activate`。这是有意的 fail-closed 行为，不是自动重连。重启后 `hy2-health.timer` 会因认证处于 hold 而写入 `/var/lib/hy2-health/blocked` 并 mask HY2，这是**预期结果**，不是需要排查的故障；`system arm` 会清除该锁。
 - 个人额度是采样软限额，存在 5 秒采样、`/kick` 在途和连接关闭延迟；不是字节级硬截断。
 - `HY2` 个人流量不等于 Google 结算流量；整机熔断是保守的 VM 发送字节近似值，也不是财务硬上限。
@@ -755,7 +762,9 @@ sudo journalctl -t gcp-egress-guard --since '15 min ago' -n 60 --no-pager
 
 升级固定核心/账户程序：本地离线构建测试、校验配套产物，批准窗口内备份并替换；不在 VM 下载/编译，不重跑安装器、不 init。更换官方核心版本或数据库格式必须重新验收；当前只批准固定 v2.13.0。VM stop/start 可能改变临时公网 IP，本次维护不允许用这种方式排障。
 
-**最新收尾状态（用户回贴）：** 09:57 UTC `hy2-recover` 已输出 `RECOVERED auth=true healthy=true core_live=true`，HY2 ActiveState=active；50584038211 bytes 新增补账已经提交。随后临时单元的 shell `ExecStopPost` 因 systemd 转义/序列化问题报语法错误，导致外层批次非零退出，**不是恢复没有提交**。`hy2-finish-reviewed.sh` 已停用，原 attempt、审核记录和日志保留；不要重跑、不要再调用 recover/arm。之后普通账户/交付续接回贴 `FRIEND_READY`：指定的 30 GiB 朋友账户已创建，Cloud Shell 私密链接文件已准备；三个服务 PID 未变、两个保护 timer active，本次没有恢复或追加补账。文件下载后私下发送，不贴内容；尚无下载/发送、升级后客户端访问或有连接封禁隔离确认。owner 仍为原 90 GiB、当时剩余约 8.86 GiB，总池 140 GiB；80 GiB 意图未明确，不能在账面已用约 81.14 GiB 时直接下调。
+**最新 r3 恢复收尾（2026-10-24 用户回贴）：** 终端明确接受 `RECOVER-1073744573` 后返回 `R3_RECOVERED / auth=true / healthy=true / core_live=true`。新版页面、owner120/朋友30/池150 GiB保持；owner当时剩37.857769 GiB。本次仅恢复一次、owner新增保守补账1073744573 bytes（adjustment变为88165004800）、朋友0，原历史/用量/凭据保留；Reality同PID，保护timer通过助手检查，整机150/180 GiB不变。朋友继续原链接/密码，只有主动rotate才需换链接。**本次新增已提交，不能重复1073744573 bytes，更不能重记原34GiB/50584038211 bytes。** 保留更新目录、recovery/attempt及Cloud Shell回执，本次服务端维护结案，不重跑程序替换、quota、arm或恢复。客户端实际访问/真实多人隔离仍未确认；见 `STAGE-A-ACCEPTANCE.md` 第18–19节。
+
+**此前恢复收尾（2026-10-23 用户回贴，历史记录）：** 09:57 UTC `hy2-recover` 已输出 `RECOVERED auth=true healthy=true core_live=true`，HY2 ActiveState=active；50584038211 bytes 新增补账已经提交。随后临时单元的 shell `ExecStopPost` 因 systemd 转义/序列化问题报语法错误，导致外层批次非零退出，**不是恢复没有提交**。`hy2-finish-reviewed.sh` 已停用，原 attempt、审核记录和日志保留；不要重跑、不要再调用 recover/arm。之后普通账户/交付续接回贴 `FRIEND_READY`：指定的 30 GiB 朋友账户已创建，Cloud Shell 私密链接文件已准备；三个服务 PID 未变、两个保护 timer active，本次没有恢复或追加补账。文件下载后私下发送，不贴内容；尚无下载/发送、升级后客户端访问或有连接封禁隔离确认。owner 仍为原 90 GiB、当时剩余约 8.86 GiB，总池 140 GiB；80 GiB 意图未明确，不能在账面已用约 81.14 GiB 时直接下调。
 
 普通交付不使用新的 systemd 收尾 hook：只读确认原 recovered/charges 回执及当前健康状态，账号不存在时仅调用一次 `user add`；符合已授权额度/启用状态的现有账户复用其 root-only 私密凭据，不重复创建、旋转或改额度。只将同字节凭据交付到已授权的 VM/Cloud Shell 0700 目录和 0600 文件；已有不同内容或非私密文件即停，不覆盖。操作前后核对三个服务 PID 与两个保护 timer，任何错误先查实际状态，不重启代理、不调用恢复。成熟面板评估未授权安装、迁移、放宽保护或改账；本次仍不新增面板、云资源、全局代理或自动更新。
 
@@ -787,7 +796,7 @@ bash "$HOME/hy2-update-resume-v2.sh"
 
 ### 快速恢复执行段
 
-> **现有 VM 已配套更新到 recovery protocol 1；09:57 UTC 恢复助手已报告成功，新增补账已提交。** 外层收尾 hook 转义报错不能作为重跑依据；后续普通交付已回贴 `FRIEND_READY`，30 GiB 朋友账户与私密文件准备完成。当前没有待重跑的更新、prepare、recover 或 arm。下文仅供其他已授权停机使用，不是现有运行节点的待执行清单；accountd 重启可能通过 BindsTo 停 HY2。
+> **现有VM已为recovery protocol 1；2026-10-24 r3已回贴 `R3_RECOVERED`，认证/统计/核心正常，owner120/朋友30/池150 GiB保持。** 本次审核新增1073744573 bytes已提交、朋友0；不重跑r3或恢复，不重复任何历史增量。下文是将来另一次已授权停机且缺口已核清后的通用说明，**不是当前待执行清单**；不能删除/复用已有attempt，accountd重启可能通过BindsTo停HY2。
 
 **适用范围：VM 重启或计划停机后 HY2 未运行，Reality/guard 正常，且本次缺口已经人工核清。不适用于**全局熔断、数据库/witness 错误、跨月或长时间未采样、账户变更丢失。三步均在已授权的 **VM SSH** 窗口执行；开机后至少等 1 分钟，不能把仍未刷新的 guard 状态当零用量。正常运行时不要执行。
 
@@ -819,6 +828,10 @@ sudo nano /root/hy2-recovery-01/review.json
 - 填写的是增量，不是当前总量或额度；不要重复迁移时的 34 GiB，也不要重填前一次失败恢复中已经提交的增量。恢复旧库、见证错误或缺失账户变更需要专项核验，不由此助手修复。
 
 以下是本次保守补账的审核过程记录；具体值已于 09:57 UTC 确认并提交，**不得再次提交**。用户此前接受“用可能达到几十 GiB 的保守多记换取恢复”的方向，随后另行确认具体字节数。可先只读评估一次极粗上界：固定官方 direct/TCP 核心无自定义传输/请求 hook 或数据解压扩张、同一启动及网络命名空间、原 ens4/lo 接口和计数连续成立时，停机确认时 ens4 累计接收量加当前 lo 累计接收量，覆盖上传从客户端接收和下载从目标接收的业务字节。它含大量历史及无关流量，**不是实际漏账或结算用量**；不减原 34 GiB，也不默认给出 0/1 GiB。只读预览须显示新增 byte、原 adjustment、新 adjustment、补后 owner 剩余额度与是否仍在原配额内，具体数值经审核后才可写原 `review.json`。同次启动、原 ifindex、单调快照只能检查常规连续性，不能证明不存在未记录的特权计数重置/接口重建；若发生过此类变更或数据路径覆盖不成立，停止这一方案，不把方向授权当作依据已成立。该评估不会改账本、保护或云资源。后续预览已回贴：新增候选 50584038211 bytes（47.110057 GiB），owner 补后约剩 8.860206 GiB，这在预览时未提交，后来已确认并提交；用户另指定了一个 30 GiB 朋友账户（两账户预留 90+30=120 GiB，仍在原 140 GiB 池内）。包外 `hy2-finish-reviewed.sh` 原设计如下，但已因收尾 hook 的实际执行错误而停用、只留作审计，不再执行：在 Cloud Shell 以 Bash 输入明确确认具体金额、30 分钟窗口及经 SSH/SCP 到 Cloud Shell 0600 私密文件的交付授权，保留原审核目录并写私密审核记录，再调用现有恢复助手一次。恢复由临时 systemd 单元托管，主执行最多 150 秒，失败且无 recovered 回执才停止 HY2；不重新安装或 prepare。恢复核验通过后才单次创建朋友账号，账号/交付失败不重启或停止整体服务，错误后先查是否已落库，不重建或重试补账。最终只输出脱敏服务端摘要和文件路径，真实客户端访问及有连接的封禁隔离仍须另验；不自动放宽防火墙，也不宣称全部生产场景通过。交付文件与校验值见包外计划，旧更新入口仍不得重跑。
+
+**2026-10-24 r3 本次审核与已提交增量记录（禁止重放）：** 这次停机窗口内最终采样成功，外网RX增量0、lo RX增量2749 bytes，但不能只据此填0。固定官方核心的direct/TCP计量路径无解压/本地生成数据时，可在**停机前后整机内存/swap、网络命名空间/接口及计数未变化**的条件下，将整机物理内存缓冲向上包络为1 GiB（现场MemTotal=1017069568 bytes、SwapTotal=0），再加窗口2749 bytes；这是故意过量的条件性缓冲包络，不是实测漏账，也不是旧“重启默认扣1GiB”规则。owner审核新增1073744573 bytes，补后约剩37.857769 GiB；朋友创建晚于最近激活、整个当时代次没有持久签发会话且用量0，审核新增0。操作者已在终端接受并单次提交，不能再执行这些值。条件包络不是未来停机的默认金额，条件不成立/未知时不能套用。
+
+本次恢复入口只允许原Cloud Shell的一次SSH，无SCP/下载/部署；核对r3成功回执、程序/助手哈希、停机证据和当前账本后在VM终端显示金额与适用条件。操作者明确输入金额绑定确认串后，才创建本次新审核目录并调用既有 `hy2-recover` 单次恢复；不复用任何旧attempt，不停止timer或重启accountd。执行上限240秒，审核等待最多90秒；SSH外层280秒，按30分钟窗口/5分钟收尾执行。失败不重试写操作；仅当**本轮确已进入恢复**且没有recovered回执时尝试停止HY2，成功恢复后的外层检查失败不得重新停服或重放补账。本次目录存在时先核对，不换目录绕过。后续用户已回贴明确金额接受和 `R3_RECOVERED`，此入口已用，仅保留审计；今后故障需新授权及仅针对新缺口的审核，不能重跑本批。
 
 工具会在执行前重新核对月份、代次和所有账户的用量/额度/禁用/撤销状态；与 `before.json` 不一致即停。不要并发执行其他账户修改、原始 `system arm` 或另一套维护命令。
 
