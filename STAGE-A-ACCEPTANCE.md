@@ -543,3 +543,149 @@ NumPy 提示只是 IAP 隧道上传性能建议，不是这次交付失败，也
 | 现场材料 | VM的本次review/attempt/recovered及Cloud Shell控制目录保留 | 不删除/复用，不恢复旧库/见证，不把临时账号凭据或数据库提交Git |
 
 **本次新版部署、120+30配额调整和服务端恢复收尾完成。** 用户要求同步后，本轮只整理日常命令、更新当前状态与验收记录、提交推送文档；不新增线上命令/资源/自动化，不停止、重启或清理任何运行服务/凭据/备份。真实多账户封禁隔离、VM故障/重启、备份恢复、实际续签热加载和结算账单仍未据此验收；所有未来维护与新增补账须另行授权，不能将本次“收尾”当作下次操作许可。
+
+## 20. 会话回收候选独立验收（2026-10-27 UTC，FAIL，未恢复）
+
+### 上一轮维护回执（不是本轮远端复查）
+
+原 owner 累计签发 512 条会话后拒绝新认证，但核心仍运行；朋友累计 0 条。上一轮先以固定官方核心源码为依据实现增量清零采样和自动回收，随后在真实核心集成测试缺失的情况下替换 VM 程序。这不能作为验收合格依据。
+
+- 14:31 UTC 执行数据库备份、prepare-stop、停止 HY2/accountd、替换账户程序、启动 accountd、`hy2-recover prepare`；旧程序保存在 `/root/hy2-reclaim-20261027/hy2-account.old`，审核目录为其下 `recovery/`。
+- 候选二进制 SHA-256：`50921535b4c0610bfa5d86d4697ebac02162afdddb59238b11da2574c879f208`；旧 r3 二进制 `4dc5eb701be1500743a7241e79cd920b816b01abf689876293a40bddcbfe73f0`。
+- 最后回执为 accountd active、HY2 inactive/masked、443/udp 无监听，Reality 与两个保护 timer active；审核文件各账户从 null 开始，未见本次 execute/recovered 回执。owner 用量 98697599497 bytes、adjustment 88165004800 bytes，朋友用量 0；历史补账未重放。
+- 上一轮启动阶段1时把输出重定向到 `/dev/null`，没有完整执行日志；仅根据保存的阶段文件和后续只读回执确认进度。不要把外层 launched 消息当成功证据。
+- 上一轮已承认超过原先 30 分钟维护窗口。后续不能把旧窗口当持续许可，也不能因“尽快恢复”跳过验收、补账依据或费用/共享额度门禁。
+- `/tmp/phase2.sh` 已上传但未有执行记录；其预填 0/0 及 `hy2-recover execute ... || true` 不符合本次验收要求，**不要执行**。本轮没有连接 VM、执行该脚本、补账、启动服务或删除现场文件。
+
+### 独立本地验收结果
+
+环境为本地 Go 1.27.3、`GOPROXY=off GOTOOLCHAIN=local GOSUMDB=off`，`HY2_BIN` 未设置，全部 fixture 使用临时数据库及 fake API，不接生产、systemd 或真实凭据。
+
+1. 新增验收测试前，`gofmt -l .` 无输出、`go vet ./...` 与 `go test -race ./...` 通过（Go 测试使用缓存结果）。这只证明已有用例通过。
+2. 新增 `hy2-account/internal/account/acceptance_review_test.go`，执行 `go test ./internal/account -run '^TestAcceptance' -count=1 -v`，**3/3 FAIL**：
+
+| 测试 | 反例及观测 | 必须保留的保障 |
+| --- | --- | --- |
+| `TestAcceptancePendingPullBlocksAuthBeforeCollector` | 留下 `.pull` 后关闭/重新打开 Store，在 last_sample 仍新鲜且 generation 相同的情况下，首次 Collector tick 前 Authenticate 仍成功 | 清零采样可能未入账时，控制器不能依赖后台采样“稍后”才禁止认证；这是控制层启动边界测试，不声称现场已绕过 BindsTo |
+| `TestAcceptanceLateOnlineBlockedSessionMustBeKicked` | 未观察上线的会话超过 2 分钟后被 disable 标成 offline；之后该 ID 出现在 online/traffic，Tick 既不踢出也不进入 review | 延迟上线的已禁账户会话不能因超时推断而永久逃过封禁；官方认证协议没有账户程序签发的 2 分钟过期租约 |
+| `TestAcceptanceFreshTrafficDefersOfflineReclamation` | 离线满 15 分钟的同一轮仍收到该 ID 的新流量，Apply 入账后立即删除映射 | 当轮活动证据必须阻止立即回收；否则下一份增量会被判未知，转为共享异常 |
+
+这些是确定性故障/延迟边界复现，不证明生产曾发生同样轨迹。随后以 `go test -race ./internal/account -run '^TestAcceptance' -count=3 -v` 重复执行，每项连续失败 3 次（9/9 FAIL，均为上述断言失败）；`gofmt -l .`、`go vet ./...`、`git diff --check` 和已改 Markdown UTF-8 检查通过。测试保留为发布阻塞门禁，不删除、跳过或把预期改为接受错误行为。当前工作树不能再宣称全量测试通过。
+
+真实 checksum-pinned v2.13.0 集成门禁仍 **NOT RUN**。上一轮单次下载超时；本轮仅查本地缓存，没有下载或调用额外模型。源码确认 clear 与取数同锁，不等于确认 HTTP 响应丢失、落库失败、延迟认证、长期回收与封禁都安全。候选保留字段名但改变 `sessions_generation`/容量字段语义，也需兼容性方案。
+
+### 零补账证据纠正与结论
+
+上一轮网卡快照为 ens4 RX `64353882568 → 64353917410`（+34842 bytes），lo RX `1529975869 → 1530010835`（+34966 bytes），合计 69808 bytes，并非可归属到 SSH 的代理流量明细。online/streams=0 的有限快照、prepare-stop 成功、用量未变不足以独立证明零尾差；因此撤回上一轮“都是 SSH，所以 0/0 足够”的断言。不默认零、不套用 r3 的 1 GiB 包络，也不重复任何历史增量。
+
+**验收结论：FAIL，阻止本轮恢复。** 继续工作应先修复并通过上述门禁、固定核心真实集成及版本/记账口径过渡核验，再在有效授权窗口内只读核对现场原目录、账本及 attempt。补账依据和精确增量审核完成后才允许单次恢复；不得直接执行现有 phase2、重跑 phase1 或自动回退数据库/程序。操作边界仍由 `IMPLEMENTATION.md` 统一维护。
+
+### R1–R4 本地修复与独立复测（2026-10-27 23:50 UTC，本地门禁 PASS，上线门禁未满足）
+
+- 委派：`openai-codex/gpt-6.1-sol`（high）在隔离源码副本内执行，工具仅限副本内读写和固定离线 Go 检查；第 12 次请求时供应方返回 `usage limit has been reached`，退出码 1。按约定未重试、未换供应商。它留下 R1–R3 的代码修改，未写测试和报告；其余由主代理完成并验收。
+- 修复要点：启动时发现残留 `.pull` 即在内存中关闭认证/激活，并在状态中报 review（不是 data_error）；仅「已 arm、不同代次、空基线入账成功」后才清除。延迟上线或仅有流量的已禁 ID 重新进入 pending，保留原尝试次数（不超过 3 次）；enable/rotate 不解除旧 ID。当轮 online/traffic ID 不删除，新活动重置 15 分钟窗口；重新打开时全部离线行重新计时；不可删除的队首顺延下次检查，避免饿死。
+- 主代理修正：子代理让耗尽的失败任务在连接已关闭后仍永久保持 failed，比已验收 r3 更严且增加人工维护；已恢复 r3 行为：观察到关闭转 offline，重新出现时按原尝试次数恢复为 failed，不再发送 kick。
+- 测试：原 3 个 `TestAcceptance*`（未改、哈希一致）、主代理 3 个 `TestLead*` 及新增 7 个 `TestRepair*`。在修复前副本上，3 个验收、 3 个 Lead 及 4 个 Repair（定向踢出、预算不重置、重复晚到增量、队首饿死）均失败，证明测试有区分力；另 2 个（arm 后重开恢复、正常采样不抖动）为保持性回归。长期模拟同一代次 4100 次重连（虚拟时间，超过旧 512/2048），用量精确、未进入 review、保留行和内存索引始终 ≤300。这不是 e2-micro 性能证据。
+- 命令（`GOPROXY=off GOTOOLCHAIN=local GOSUMDB=off`，无 `HY2_BIN`）：`gofmt -l .` 无输出；`go vet ./...`；`go test -count=1 ./...` PASS（副本与工作树各一次）；`go test -race -short -count=1 ./...` PASS（长期模拟在 race 下跳过）；故障边界与标记相关测试 `-race -count=3` PASS；`git diff --check` 通过。
+
+仍未关闭、阻塞上线的项目：
+
+1. 真实 checksum-pinned v2.13.0 回环集成 **NOT RUN**（本地无缓存核心，未下载）。
+2. 清零请求响应丢失仍须人工 review；未消费的 KickMap 标记是否在核心内长期增长未验证。
+3. 从未观察在线、仅有流量的已禁 pending/issued 行不会自动回收（与 r3 基线一致，受每代次封禁任务数限制）。
+4. `sessions_generation` 等旧 JSON 字段已改义为活跃连接数，兼容性未决定。
+5. 累计→增量切换必须在核心停止后以新代次空基线进行；回退旧程序也须先停核心，否则会触发计数回退 review。未在生产演练。
+6. 本次停机尾差的逐账户增量仍未核清。
+
+**结论：本地修复门禁 PASS；上线门禁未满足，HY2 继续停止。** 工作树代码已不同于 VM 上的 `50921535…` 候选，部署前需重新构建、记录哈希并另行授权。
+
+### 真实核心自验与后续修复（2026-10-28 00:10 UTC，本地 PASS，未部署）
+
+- 核心：用户授权后单次下载官方 `hysteria-linux-amd64` v2.13.0（`ca8fbd8…`，BuildType release），SHA-256 `907ba8c9…a86691` 与脚本固定值一致；仅放宽总时长并加低速中止，无重试。核心仅为本地临时文件，未上传 VM。
+- 新增真实核心测试 `TestPinnedReclaimExactDeltaAccountingAndReconnectRelease`：活跃上限 3，同一核心代次 6 次真实客户端重连、每次 3 轮回显 + 清零读取；tx=3024/rx=5904 与实际转发字节完全一致；断开后在线归 0、活跃容量释放、未进入 review；非破坏性 `/traffic` 为空，即核心不再保留已关闭会话计数。同一测试放到 r3 基线（HEAD）上在第 4 次重连超时失败，复现生产事故。
+- 既有真实核心门禁（多设备定向封禁/认证竞争/配额踢出/owner 连接不中断、生产 ACL）在候选上通过。
+- 新修复（切换门禁）：`.delta` 旁路文件记录由增量模式提交空基线的核心代次；未基线化的代次（热替换到运行中的累计核心、回退、旁路文件丢失/损坏）一律不发清零请求、不认证、不激活，状态为可恢复的 review；即使操作者对同一代次 arm 也不能绕过。只有停核心 → 审核 arm → 新代次空基线才解除。防止把累计值当增量重复计费。
+- 新修复（JSON）：保留 `sessions_generation`/`session_cap_generation`，新增同值的 `active_sessions`/`active_session_cap`；仓库内无程序读取旧字段（恢复助手只读用量/状态字段）。
+- 新增 5 个门禁测试，将门禁强制放行后其中 3 个失败（另 2 个为正常恢复和 JSON 保持性检查）。
+- 命令：`gofmt -l .` 无输出；`go vet ./...`；`go test -count=1 ./...` PASS；`go test -race -short -count=1 ./...` PASS；`HY2_BIN=<核心> go test -race -count=2 ./internal/account -run TestPinned` 3×2 PASS；`python3 -m unittest tests.test_recover_hy2` 31 项 PASS；`git diff --check` 通过。
+
+仍开放（不代表已获风险豁免）：清零响应丢失仍须人工 review；未消费的 KickMap 标记可随封禁操作保留至核心结束，当前活跃会话上限不能证明它有长期固定上界；从未在线的已禁 pending/issued 行不自动回收；e2-micro 资源占用未测；本次停机逐账户尾差未核清。部署需重新构建、记录哈希及授权窗口。切换门禁只在新程序内有效，不能约束旧程序；配套升级/回退均须先停核心并恢复至新代次。
+
+## 21. 最终本地复验与审核精简边界（2026-10-28，功能 PASS，未发布）
+
+本轮仅本地验收和文档纠正，未修改运行代码、访问 VM、调用云 API、下载、补账或恢复。没有再次委派模型，也没有修改费用/额度设置。最后远端记录仍是旧候选 accountd 运行、HY2 停止；不把该历史快照冒称为本轮探测。
+
+### 实际执行
+
+- 官方 v2.13.0 本地文件重新校验 SHA-256 为 `907ba8c9693edb104b20582681fb7dc15639d5b64a9cbb616a7b539190a86691`。
+- 离线 Go 1.27.3，`GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local`：`gofmt -l .` 无输出、`go vet ./...` 通过。
+- 显式指定缓存 `HY2_BIN`，执行 `go test -race -count=1 -timeout=6m ./...`，**未加 `-short`，两个包通过**。包括原3个失败门禁、后续回归、4100次虚拟时间重连和3个真实官方核心回环测试；无编译器缓存结果复用的测试跳过。总墙钟约268秒。测试进程的资源读数包含编译/竞态检测，不能当作生产 accountd 内存或 e2-micro 性能。
+- `python3 -m unittest -v tests.test_recover_hy2 tests.test_egress_guard`：**51/51 PASS**，均为临时文件/fake命令，不调用真实 systemd。
+- `git diff --check`、已改 Markdown UTF-8 检查通过；审查 tracked diff 及新增的 pull/retention/验收测试文件，没有生成运行产物或新增依赖。
+
+### 结论与不能扩大解释的部分
+
+**新版本已覆盖功能流程的本地验收通过；不签无条件发布、永久免维护或全部兼容。** 两项先前说明须纠正：
+
+1. `sessions_generation`/`session_cap_generation` 仍改义为活跃容量；新增 `active_sessions`/`active_session_cap` 不等于向后语义兼容。该接口变更是发布前仍需关闭的要求，不能仅以仓库内未发现旧消费者为依据豁免。
+2. `.delta` 由新程序打开数据库时读取/缓存，不能保证运行期间损坏立即被检测，更不能使旧版程序自动执行门禁。先停核心、配套升级/回退、新代次空基线仍是必要的操作前提。
+
+长期核心 KickMap/未完成封禁任务占用、e2-micro 实测、真实部署与原客户端访问仍未签署；没有把它们描述成“已接受风险”。当前只修正文档，未借验收顺手改协议、数据格式或恢复工具。
+
+用户要求减少审核负担，可在同一有效窗口内复用未漂移材料，集中展示一份简短摘要并确认一次，按有依据的保守增量记账而不必还原每个包；具体流程仅维护在 `IMPLEMENTATION.md`。GCP 预算告警仅作提醒，有时延且不会自行封顶，不能据此取消 guard、凭空补零、重复历史增量或忽略写操作结果不确定。告警实际设置本轮未读取。
+
+## 22. 旧 JSON 口径修复与 schema 2 离线迁移（2026-10-28，本地 PASS，恢复待现场核对）
+
+用户要求处理兼容性并尽快恢复。本轮先完成代码修复及配套验收，**未操作 VM、未迁移生产数据库、未补账、未恢复**。
+
+- `session_totals` 每账户仅一行：签发会话与累计数同事务提交，整数溢出或缺行会拒绝认证；缺计数状态读失败而非显示0。重命名、月份切换、会话回收/控制器重开不减累计数，只有审核后的新核心代次清零。
+- 旧 `sessions_generation` 恢复累计签发数、`session_cap_generation` 保留原配置值作为历史参考，不再决定终生连接容量；活跃限制与页面改用独立字段。`session_capacity_mode=active` 明确规则。真实核心测试同时断言累计6、活跃0，长期测试同时断言累计4100且活跃不超限。
+- 新版本输出 `hy2-account 2 ... recovery-protocol=1 schema=2`。默认serve不自动迁移；显式 `migrate-sessions --counts-file` 要求HY2停止、accountd数据锁释放、原账本hold/review、未arm、witness正常、完整审核会话计数匹配且无pull/delta遗留。schema/table/counters/audit同事务提交，不修改已用字节、额度、凭据、禁用/撤销状态。旧二进制拒绝schema2，禁止用删表或改user_version回退。
+- 新增6个 `TestSessionTotals*`（含事务/见证失败子场景）及一个真实CLI派发迁移用例；验证丢失历史不冒充0、重复迁移拒绝、失败不部分提交。CLI用例最初因fixture把witness放在数据库同目录被既有保护拒绝，已修正fixture目录，未放松保护。
+- 更新此前只测活跃数的断言改读active字段，同时增加累计值断言；原3个 `TestAcceptance*` 未改弱。页面准确说明在线空闲连接不会被清理，不再误称所有空闲会话会回收。
+- 实际执行：`gofmt -l .` 无输出；`go vet ./...`；完整 `HY2_BIN=<校验核心> go test -race -count=1 -timeout=7m ./...` PASS（包括4100次重连及3个真实核心测试）；随后CLI参数解析/fixture修正后 `go test -count=1 -short ./...` 和相关CLI/SessionTotals/Acceptance/DeltaGate `-race -count=3` PASS；恢复与guard的51项Python测试PASS；`git diff --check`通过。
+- 本地静态linux/amd64候选：`hy2-session-compat-v2-linux-amd64-20261028T044523Z`，二进制SHA-256 `c6b418ef3b771a222f01117d27cbdeeabffdffaa480b8855da19109e7af02208`。未包含真实凭据/数据库，未上传或替换VM程序。
+
+兼容性功能门禁已关闭；真实发布仍须从原Cloud Shell/IAP管理通道核对当前服务、原审核/attempt、schema1历史是否完整、费用与共享额度条件，再确认一次迁移窗口及本次新增字节。不能自动执行旧phase1/phase2，也不能将用户“尽快恢复”当作已接受未知的额外扣量。已有停机证据未被本轮新读取，仍保留原材料供恢复审核。
+
+## 23. 用户授权直接连接后的现场只读核对（2026-10-28 05:05 UTC）
+
+用户明确要求代理直接连接执行。实际使用已有 Windows gcloud 身份、原 SSH 密钥，经 IAP 单次连接已确认目标，启用严格主机校验与非交互模式；未使用临时放宽主机校验、未改gcloud配置。90秒脚本之外加110秒外层截止，不自动重试。该次授权调整的是管理通道，不是解除迁移/恢复/补账/费用门禁。
+
+只执行已交付预检的同字节Python负载（本地AST提取、编译、base64传输），没有上传或落地VM脚本：`version`、只读 `status`、SQLite mode=ro/query_only/只读事务、既有回执/配置局部字段读取、`systemctl show`。未输出凭据、密钥、完整配置、数据库内容或会话ID。
+
+| 项目 | 现场结果 |
+| --- | --- |
+| 核心/账户程序 | 旧候选 accountd active，版本1/recovery-protocol1；HY2 inactive/masked，core_live/authentication_allowed均false |
+| 备用/保护 | Reality active，两个保护timer active；所有服务NRestarts=0；未启停任何服务 |
+| 数据库 | schema1，数据库revision与独立witness一致；无pull/delta遗留 |
+| 历史会话 | owner512、朋友0，与原status-before记录相同；当前候选status中的0是活跃口径，不当作累计0 |
+| 恢复材料 | 原recovery目录存在，attempt不存在，review中的逐账户charges仍为null；未迁移、未调用arm/execute |
+| 用量 | owner used=98697599497 bytes，adjustment=88165004800 bytes，剩28.080698 GiB；朋友used/adjustment均0，剩30 GiB；额度120/30、池150不变 |
+| 整机保护 | used=54479423387 bytes（50.737917 GiB）/180 GiB，150 GiB警戒，healthy=true/blocked=false，覆盖两代理；非GCP结算读数 |
+| 停机证据 | 原3份RX/online/streams快照存在，数值与第20节一致；这些快照仍不单独证明零尾差 |
+
+预检完成并正常返回。**本次只读完成，不是已恢复服务。** 现场未显示重复补账或迁移；新版本依然未部署。当前费用/SKU/计费账户共享额度没有通过本轮云账单读取再次确认，不能把健康guard或预算告警代替该条件。后续只需集中确认一次有效窗口和有依据的逐账户新增补记，不重跑旧phase1/phase2、不覆盖/删除审核材料，不把null改成默认0。
+
+## 24. 部署授权后的费用核对与持久检查点（2026-10-28，迁移/恢复尚未执行）
+
+用户要求部署、迁移、恢复、重要记录及时落盘，结束后推送同步。代理限定本次窗口05:10:40–05:40:40 UTC、预留5分钟收尾；没有把该授权解释为接受未知的额外补账。材料先落盘，恢复写操作等待一次集中确认。
+
+### 本次实际读取
+
+- Cloud Billing project link正常；VM ID与已确认目标一致，e2-micro / Standard Tier / 一块30 GiB pd-standard磁盘。
+- 列出同账单账户下2个项目；本项目仅当前1台VM，另一项目本次列举VM为空。当前无VM不证明另一项目当月没有历史共享消耗。
+- 预算列表包含1/5/30/5 USD的提醒规则；所列预算未配置Pub/Sub，不是自动停止资源。此结论仅描述预算字段，不声称已排查所有外部自动化。
+- 这些Cloud Billing接口未提供当月实际SKU费用、抵扣或历史共享额度，仍需操作者明确确认当前费用/共享额度无异常；没有以预算金额作为新增支出许可。
+- 05:13:45 UTC单次IAP只读证据：核心仍inactive，旧accountd自10月27日14:31:50起运行、哈希仍 `50921535…879f208`；官方核心和恢复助手哈希均匹配已固定版本。原账本与停机前快照用量/凭据状态字段未变、schema1/无attempt。Reality自10月28日01:00:02运行，已不同于更早快照；本轮没有重启它，不将此变化归因于本轮操作。
+- 当前与旧核心为同次boot，MemTotal=1017069568 bytes、SwapTotal=0；当前核心配置业务UDP关闭、无requestHook、无自定义outbounds、严格SNI。这些是当前条件，不能单独证明历史swap、内存或网络计数/路径从未变化。
+
+### 未接受的补记建议（不是已记账）
+
+为减少逐包核账负担，向用户展示条件性保守建议：owner新增 `1073811632 bytes`（整机1 GiB缓冲包络＋旧停机窗口RX合计69808 bytes），补后剩约27.080633 GiB；朋友候选0（原代次从未持久签发会话、用量0）。数值不是实测漏账、不是5秒固定补账、更不是此前r3增量重放；owner包络依赖停机期间内存/swap及direct数据路径、网络计数连续等条件，当前快照不足以全面证明。**未获具体金额/条件接受前仍为null，不执行arm。** 用户可以明确接受这种非精确保守补记及条件不确定性，或提供更强证据；不能把一般恢复授权或预算提醒当作接受。
+
+### 重要记录已落盘
+
+按用户要求，在VM创建0700目录 `/root/hy2-session-compat-v2-20261028T051040Z/`，用O_EXCL写0600 `checkpoint-0001.json`，fsync文件与目录，SSH正常返回 `DURABLE_CHECKPOINT`。记录授权范围/截止时间、原恢复目录、候选哈希、计数512/0、逐账户审核值null、未接受的数值建议、费用核对边界及各写操作false。该目录不是新的recovery/attempt，不替代或绕过原审核材料；原attempt不存在已先检查。
+
+**当前结果：仅费用/证据读取及检查点写入完成，deployment=false / migration=false / arm=false / recovery=false。** 未上传新程序，未启停服务、改额度或保护，未调用原phase1/phase2或恢复命令；待一次集中确认。窗口到期则保持HY2停止，不复用过期授权。代码与此状态可先同步Git，恢复结果后续追加，不能把源代码推送当作部署成功。

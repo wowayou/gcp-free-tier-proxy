@@ -18,9 +18,16 @@
 
 ## Current Architecture
 
+> 部署准备检查点（2026-10-28 05:10–05:15 UTC）：用户授权部署/迁移/恢复及最后Git同步后，费用属性/原账本只读核对已做，VM持久保存 `/root/hy2-session-compat-v2-20261028T051040Z/checkpoint-0001.json`。**尚未部署、迁移、arm或恢复**；候选owner1073811632/朋友0 bytes是未接受的条件性建议，原review仍null。所列预算无Pub/Sub、同账单有2项目且另一项目当前无VM，仍不能证明当月实际费用与历史共享额度。等待一次集中确认，窗口05:40:40 UTC到期、预留5分钟收尾；过期不继续。详见 `STAGE-A-ACCEPTANCE.md` 第24节，不自动写0/重放旧增量，不重跑phase1/phase2。
+
+> 最新只读现场核对（2026-10-28 05:05 UTC，用户明确允许直接连接）：单次本地 Windows gcloud/IAP SSH、严格主机校验通过。HY2 inactive/masked、accountd/Reality active、两个保护 timer active；schema1，witness一致，owner保留512条、朋友0，与原停机前累计记录一致；无pull/delta遗留、原recovery/attempt不存在、审核增量仍全部null。guard健康、整机50.737917/180 GiB，owner剩28.080698 GiB，朋友30 GiB；历史补账未变。**本次只读，没有迁移、部署、补账、arm或启动HY2；新schema2候选仍未发布。** 详细记录见 `STAGE-A-ACCEPTANCE.md` 第23节。用户授权直接管理通道只限此次核对，不代表允许新预算/资源或默认零补账。
+
+> 上次现场/初验记录（2026-10-27 UTC）：上一轮工具回执显示，14:31 已备份并停止 HY2、替换 accountd 为会话回收候选 `50921535…879f208`，accountd active、HY2 inactive/masked，Reality 和两个保护 timer active；尚未恢复或提交本次补账。**本轮独立本地验收未通过，禁止执行已上传的 `/tmp/phase2.sh`、直接 arm/activate 或把该候选当作验收合格版本。** 3 个新增故障/延迟边界回归失败，真实固定核心集成测试未执行；详见 `STAGE-A-ACCEPTANCE.md` 第20节。本轮未连接 VM，这不是当前远端状态的再次确认。保留 `/root/hy2-reclaim-20261027/` 及原备份/审核材料；后续先核对 attempt 和账本，不重跑 phase1，不猜 0/0，不自动回退。下方 r3 为历史成功记录，不代表本次已恢复。
+> 兼容性修复（2026-10-28 UTC）：旧 `sessions_generation` 已恢复为累计签发数，独立 `active_sessions` 控制活跃容量；每账户一个事务化汇总行，清理会话不清历史用量。schema 2 须经显式离线 `migrate-sessions --counts-file` 从完整、已审核的 v1 会话记录迁移，正常 serve 不会自动迁移。旧 schema 1 二进制不能直接回退使用该库；不得删表/改 user_version 绕过。CLI/accountd必须配套，协议仍为1。完整含真实核心/race验收通过，详见 `STAGE-A-ACCEPTANCE.md` 第22节。**新版本未部署、未补账、未恢复；最后 VM 记录仍为旧候选停服状态。** `.delta` 不能约束旧程序；升级/回退必须先停核心，新代次恢复仍走原审核助手。预算告警不是封顶，确认可简化但不猜增量。
+
 > 迁移状态（2026-10-23 UTC）：官方 HY2 + 本地账户系统已在授权窗口内完成服务端切换，旧 sing-box HY2 已删除；Reality 保留。官方核心启动、采样、认证激活、VM 本机代理请求及原公网客户端实际访问已通过；**最终只读核验与临时凭据清理通过，本次单账户迁移收尾完成**。后续配套更新与受控恢复已成功，新增补账已提交；用户回贴 `FRIEND_READY`，30 GiB 朋友账户及私密文件准备完成，本次交付未重启服务、未重跑恢复或补账。下载/私下发送、升级后客户端访问及真实多账户封禁隔离仍未确认；故障/重启等不签署全部通过。现场证据与未覆盖项见 `STAGE-A-ACCEPTANCE.md` 第 11、15 节。
 
-> 最新状态（2026-10-24 UTC）：用户已在终端接受本次新增字节并回贴 **`R3_RECOVERED / auth=true / healthy=true / core_live=true`**。新版页面、owner120 GiB/朋友30 GiB/池150 GiB已生效，owner当时剩37.857769 GiB；本次仅一次恢复，owner新增保守补账1073744573 bytes、朋友0，原历史与凭据保留。Reality PID未变、保护timer通过助手检查，整机150/180 GiB不变。**不要重跑r3/恢复/arm或重复本次补账，不重启accountd；朋友继续原链接。** 保留review/attempt/recovered回执、审计和私密交付文件；客户端实际访问、真实多人封禁隔离等仍未回贴确认。本次维护服务端收尾，现场证据见 `STAGE-A-ACCEPTANCE.md` 第18–19节。
+> r3 历史状态（2026-10-24 UTC）：用户已在终端接受本次新增字节并回贴 **`R3_RECOVERED / auth=true / healthy=true / core_live=true`**。新版页面、owner120 GiB/朋友30 GiB/池150 GiB已生效，owner当时剩37.857769 GiB；本次仅一次恢复，owner新增保守补账1073744573 bytes、朋友0，原历史与凭据保留。Reality PID未变、保护timer通过助手检查，整机150/180 GiB不变。**不要重跑r3/恢复/arm或重复本次补账，不重启accountd；朋友继续原链接。** 保留review/attempt/recovered回执、审计和私密交付文件；客户端实际访问、真实多人封禁隔离等仍未回贴确认。本次维护服务端收尾，现场证据见 `STAGE-A-ACCEPTANCE.md` 第18–19节。
 
 已保留的本人备用：
 

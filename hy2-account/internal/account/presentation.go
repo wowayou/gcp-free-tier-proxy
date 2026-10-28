@@ -62,8 +62,8 @@ func (v Status) UserNotice(u UserView) Notice {
 		return Notice{"warning", "暂不能接入", "账户自身未暂停，但共享门禁或运行状态不可放行；请先处理顶部提示。"}
 	case v.CertificateError != "":
 		return Notice{"warning", "接入待核验", "账户有余额且未暂停，但证书异常；需先确认客户端能够正常校验证书。"}
-	case u.SessionCap > 0 && u.Sessions >= u.SessionCap:
-		return Notice{"warning", "新连接容量已满", "本次核心运行已签发的会话达到个人上限，不因此踢出现有连接；不要用重启试错。"}
+	case u.ActiveSessionCap > 0 && u.ActiveSessions >= u.ActiveSessionCap:
+		return Notice{"warning", "新连接容量已满", "活跃连接（含刚认证的连接）达到个人上限，不因此踢出现有连接；离线且持续无活动的普通会话会自动回收，仍在线的空闲连接不会因此删除。这不是物理设备数限制。"}
 	case u.Percent >= 80:
 		return Notice{"warning", "余额偏低", "已使用至少 80% 的月额度；有余额不代表整机还有同等免费出站额度。"}
 	default:

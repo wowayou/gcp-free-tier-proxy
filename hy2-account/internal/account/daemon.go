@@ -62,9 +62,13 @@ type UserView struct {
 	Failed     int     `json:"ban_failed"`
 	Issued     int     `json:"ban_issued_waiting"`
 	Offline    int     `json:"ban_offline"`
-	Sessions   int     `json:"sessions_generation"`
+	Sessions   int64   `json:"sessions_generation"`
 	SessionCap int     `json:"session_cap_generation"`
-	Status     string  `json:"status"`
+	// Legacy fields retain cumulative issuance and the configured cap value.
+	// The historical cap is informational; admission uses the active fields.
+	ActiveSessions   int    `json:"active_sessions"`
+	ActiveSessionCap int    `json:"active_session_cap"`
+	Status           string `json:"status"`
 }
 
 type DayView struct {
@@ -74,41 +78,44 @@ type DayView struct {
 	Total int64  `json:"total"`
 }
 type Status struct {
-	RecoveryProtocol   int         `json:"recovery_protocol"`
-	Month              string      `json:"month"`
-	Meta               Meta        `json:"accounting"`
-	Users              []UserView  `json:"users"`
-	Days               []DayView   `json:"days"`
-	DayMax             int64       `json:"day_max"`
-	Tx                 int64       `json:"tx"`
-	Rx                 int64       `json:"rx"`
-	Adjustment         int64       `json:"conservative_adjustment"`
-	Used               int64       `json:"used_bytes"`
-	VMRemaining        int64       `json:"vm_remaining_bytes"`
-	QuotaPool          int64       `json:"quota_pool_bytes"`
-	Online             int         `json:"online"`
-	Guard              GuardStatus `json:"vm"`
-	GuardError         string      `json:"vm_error"`
-	StatsError         string      `json:"stats_error"`
-	CertificateExpires int64       `json:"certificate_expires"`
-	CertificateError   string      `json:"certificate_error"`
-	Healthy            bool        `json:"healthy"`
-	AuthAllowed        bool        `json:"authentication_allowed"`
-	CoreLive           bool        `json:"core_live"`
-	HealthBlocked      bool        `json:"shared_health_blocked"`
-	DataError          string      `json:"data_error,omitempty"`
-	Gaps               []string    `json:"accounting_gaps"`
+	SessionCapacityMode string      `json:"session_capacity_mode"`
+	RecoveryProtocol    int         `json:"recovery_protocol"`
+	Month               string      `json:"month"`
+	Meta                Meta        `json:"accounting"`
+	Users               []UserView  `json:"users"`
+	Days                []DayView   `json:"days"`
+	DayMax              int64       `json:"day_max"`
+	Tx                  int64       `json:"tx"`
+	Rx                  int64       `json:"rx"`
+	Adjustment          int64       `json:"conservative_adjustment"`
+	Used                int64       `json:"used_bytes"`
+	VMRemaining         int64       `json:"vm_remaining_bytes"`
+	QuotaPool           int64       `json:"quota_pool_bytes"`
+	Online              int         `json:"online"`
+	Guard               GuardStatus `json:"vm"`
+	GuardError          string      `json:"vm_error"`
+	StatsError          string      `json:"stats_error"`
+	CertificateExpires  int64       `json:"certificate_expires"`
+	CertificateError    string      `json:"certificate_error"`
+	Healthy             bool        `json:"healthy"`
+	AuthAllowed         bool        `json:"authentication_allowed"`
+	CoreLive            bool        `json:"core_live"`
+	HealthBlocked       bool        `json:"shared_health_blocked"`
+	DataError           string      `json:"data_error,omitempty"`
+	Gaps                []string    `json:"accounting_gaps"`
 }
 
 func (s *Store) View(now time.Time) (Status, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var v Status
+	v.SessionCapacityMode = "active"
 	v.Month, _ = billingTime(now)
 	m, err := readMeta(s.db)
 	if err != nil {
 		return v, err
 	}
+	m = s.pullMeta(m)
 	if s.fatal != nil {
 		m.Review = true
 		m.Reason = s.fatal.Error()
@@ -123,14 +130,15 @@ func (s *Store) View(now time.Time) (Status, error) {
  (SELECT COUNT(*) FROM sessions WHERE account_id=a.id AND generation=? AND kick_state='failed'),
  (SELECT COUNT(*) FROM sessions WHERE account_id=a.id AND generation=? AND kick_state='issued'),
  (SELECT COUNT(*) FROM sessions WHERE account_id=a.id AND generation=? AND kick_state='offline'),
- (SELECT COUNT(*) FROM sessions WHERE account_id=a.id AND generation=?)
- FROM accounts a LEFT JOIN months m ON m.account_id=a.id AND m.month=? ORDER BY a.created`, m.Generation, m.Generation, m.Generation, m.Generation, m.Generation, m.Generation, v.Month)
+ (SELECT issued FROM session_totals WHERE account_id=a.id AND generation=?),
+ (SELECT COUNT(*) FROM sessions WHERE account_id=a.id AND generation=? AND (online=1 OR (seen_online=0 AND created>?)))
+ FROM accounts a LEFT JOIN months m ON m.account_id=a.id AND m.month=? ORDER BY a.created`, m.Generation, m.Generation, m.Generation, m.Generation, m.Generation, m.Generation, m.Generation, now.Add(-2*time.Minute).UnixNano(), v.Month)
 	if err != nil {
 		return v, err
 	}
 	for rows.Next() {
 		var u UserView
-		if err := rows.Scan(&u.Name, &u.Quota, &u.Disabled, &u.Revoked, &u.Tx, &u.Rx, &u.Adjustment, &u.Exhausted, &u.Online, &u.Pending, &u.Failed, &u.Issued, &u.Offline, &u.Sessions); err != nil {
+		if err := rows.Scan(&u.Name, &u.Quota, &u.Disabled, &u.Revoked, &u.Tx, &u.Rx, &u.Adjustment, &u.Exhausted, &u.Online, &u.Pending, &u.Failed, &u.Issued, &u.Offline, &u.Sessions, &u.ActiveSessions); err != nil {
 			rows.Close()
 			return v, err
 		}
@@ -163,10 +171,11 @@ func (s *Store) View(now time.Time) (Status, error) {
 			u.Status += " · 封禁已下发/等待离线"
 		}
 		u.SessionCap = s.cfg.MaxSessionsPerUser
-		if u.Sessions >= u.SessionCap {
-			u.Status += " · 本代次会话容量耗尽/拒绝新连接"
-		} else if u.Sessions*5 >= u.SessionCap*4 {
-			u.Status += " · 会话容量预警"
+		u.ActiveSessionCap = s.cfg.MaxSessionsPerUser
+		if u.ActiveSessions >= u.ActiveSessionCap {
+			u.Status += " · 活跃连接数达到上限/拒绝新连接"
+		} else if u.ActiveSessions*5 >= u.ActiveSessionCap*4 {
+			u.Status += " · 活跃连接数预警"
 		}
 		v.Users = append(v.Users, u)
 		v.Tx += u.Tx

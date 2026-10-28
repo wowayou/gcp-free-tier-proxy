@@ -41,12 +41,16 @@ func run() error {
 	}
 	global := flag.NewFlagSet(mode, flag.ContinueOnError)
 	cfgPath := global.String("config", "/etc/hy2-account/config.json", "configuration file")
+	var countsFile string
+	if mode == "migrate-sessions" {
+		global.StringVar(&countsFile, "counts-file", "", "private reviewed cumulative session counts")
+	}
 	if err := global.Parse(args); err != nil {
 		return err
 	}
 	args = global.Args()
 	if mode == "version" {
-		fmt.Printf("hy2-account 1; core %s %s; recovery-protocol=%d\n", account.CoreVersion, account.CoreCommit, account.RecoveryProtocol)
+		fmt.Printf("hy2-account 2; core %s %s; recovery-protocol=%d schema=2\n", account.CoreVersion, account.CoreCommit, account.RecoveryProtocol)
 		return nil
 	}
 	if mode == "validate-cert" {
@@ -85,6 +89,21 @@ func run() error {
 			return err
 		}
 		return s.Close()
+	case "migrate-sessions":
+		// Offline-only; invoke as the installed state owner under the approved
+		// maintenance supervisor. File ACLs and Store's exclusive lock protect
+		// the data; this command never starts/stops a service itself.
+		if len(args) != 0 || countsFile == "" {
+			return errors.New("migrate-sessions --counts-file PRIVATE_REVIEWED_COUNTS.json required")
+		}
+		if err := verifyCoreStopped(); err != nil {
+			return err
+		}
+		var counts map[string]int64
+		if err := account.ReadPrivateJSON(countsFile, &counts, 8192); err != nil {
+			return err
+		}
+		return account.MigrateSessionCounters(cfg, secrets, counts, time.Now())
 	case "serve":
 		s, err := account.OpenStore(cfg, secrets, false, time.Now())
 		if err != nil {
@@ -126,7 +145,7 @@ func run() error {
 	}
 }
 func usage() error {
-	return errors.New("usage: hy2-account serve|init|version|validate-cert|secrets-init|core-run|render-core|health|admin; hy2-admin [--config PATH] user add|list|quota|disable|enable|revoke|rotate|rename|export|retry-ban; status [--human]; system arm|activate|prepare-stop|backup")
+	return errors.New("usage: hy2-account serve|init|migrate-sessions|version|validate-cert|secrets-init|core-run|render-core|health|admin; hy2-admin [--config PATH] user add|list|quota|disable|enable|revoke|rotate|rename|export|retry-ban; status [--human]; system arm|activate|prepare-stop|backup")
 }
 
 func quotaBytes(value string) (int64, error) {

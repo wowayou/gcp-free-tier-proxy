@@ -63,7 +63,15 @@ CREATE INDEX session_account_generation ON sessions(account_id,generation);
 CREATE INDEX session_generation ON sessions(generation);
 CREATE TABLE audit (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, action TEXT NOT NULL, account TEXT NOT NULL, detail TEXT NOT NULL);
 CREATE TABLE gaps (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, generation TEXT NOT NULL, reason TEXT NOT NULL);
-PRAGMA user_version=1;
+PRAGMA user_version=2;
+` + sessionTotalsSchema
+
+// Exactly one counter row per account; never pruned with individual sessions.
+const sessionTotalsSchema = `
+CREATE TABLE session_totals (
+ account_id TEXT PRIMARY KEY REFERENCES accounts(id), generation TEXT NOT NULL,
+ issued INTEGER NOT NULL CHECK(typeof(issued)='integer' AND issued>=0)
+);
 `
 
 type Meta struct {
@@ -91,13 +99,25 @@ type Store struct {
 	aead     cipher.AEAD
 	expected Witness
 	fatal    error
+	// Only orphaned/ambiguous pulls close this gate, not live transient markers.
+	pullUnresolved bool
+	// Generation whose empty delta baseline was committed (persisted sidecar).
+	deltaGen string
 	lockFile *os.File
 	identity os.FileInfo
+	// Offline timestamps are conservative and intentionally not persisted.
+	offlineSince map[string]*offlineSession
+	offlineQueue offlineHeap
+	pruneCursor  string
 	// Only tests inject a failure inside the real SQLite transaction.
 	beforeCommit func() error
 }
 
 func OpenStore(c Config, secrets Secrets, initialize bool, now time.Time) (*Store, error) {
+	return openStore(c, secrets, initialize, nil, now)
+}
+
+func openStore(c Config, secrets Secrets, initialize bool, migrateCounts map[string]int64, now time.Time) (*Store, error) {
 	lock, err := os.OpenFile(c.Database+".lock", os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
@@ -190,8 +210,11 @@ func OpenStore(c Config, secrets Secrets, initialize bool, now time.Time) (*Stor
 		}
 	} else {
 		var version int
-		if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 1 {
-			return fail(errors.New("unsupported database schema"))
+		if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || (version != 2 && !(version == 1 && migrateCounts != nil)) {
+			return fail(errors.New("unsupported database schema: v1 requires explicit offline migrate-sessions"))
+		}
+		if migrateCounts != nil && version != 1 {
+			return fail(errors.New("migration requires schema v1; inspect prior result, never replay migration"))
 		}
 		var check string
 		if err := db.QueryRow(`PRAGMA quick_check`).Scan(&check); err != nil || check != "ok" {
@@ -207,6 +230,18 @@ func OpenStore(c Config, secrets Secrets, initialize bool, now time.Time) (*Stor
 			// Keep the service/page available but never authenticate or overwrite the witness.
 			s.fatal = errors.New("database/witness mismatch: possible restore or interrupted durable commit")
 		}
+	}
+	if migrateCounts != nil {
+		if err := s.migrateSessionTotals(migrateCounts, now); err != nil {
+			return fail(err)
+		}
+	}
+	if _, err := os.Lstat(c.Database + ".pull"); !os.IsNotExist(err) {
+		s.pullUnresolved = true
+	}
+	s.deltaGen = readDeltaBaseline(c)
+	if err := s.initRetention(now); err != nil {
+		return fail(err)
 	}
 	owned = true
 	return s, nil
@@ -250,7 +285,20 @@ func (s *Store) Meta() (Meta, error) {
 		m.Reason = s.fatal.Error()
 		return m, s.fatal
 	}
-	return m, err
+	return s.pullMeta(m), err
+}
+
+// An orphan is reviewable evidence, not a witness/storage fatal error. Keep an
+// explicitly armed hold usable across restart; it still cannot authenticate and
+// only the collector can validate a different, empty generation and clear it.
+func (s *Store) pullMeta(m Meta) Meta {
+	armed := m.Hold && !m.Review && m.ArmUntil > 0 && m.LastSample == 0
+	if s.pullUnresolved && !armed {
+		m.Review, m.Hold, m.Reason = true, true, interruptedPull
+	} else if m.Generation != "" && !s.deltaBaselinedLocked(m.Generation) && !armed {
+		m.Review, m.Hold, m.Reason = true, true, deltaGateReason
+	}
+	return m
 }
 
 func (s *Store) mutate(fn func(*sql.Tx, Meta) error) error { return s.commit(fn, false) }
@@ -258,6 +306,10 @@ func (s *Store) mutate(fn func(*sql.Tx, Meta) error) error { return s.commit(fn,
 func (s *Store) commit(fn func(*sql.Tx, Meta) error, repair bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.commitLocked(fn, repair)
+}
+
+func (s *Store) commitLocked(fn func(*sql.Tx, Meta) error, repair bool) error {
 	if s.fatal != nil && !repair {
 		return s.fatal
 	}
@@ -429,6 +481,9 @@ func (s *Store) AddUsers(users []NewUser, now time.Time) error {
 			if _, err := tx.Exec(`INSERT INTO months(account_id,month) VALUES(?,?)`, id, month); err != nil {
 				return err
 			}
+			if _, err := tx.Exec(`INSERT INTO session_totals(account_id,generation,issued) VALUES(?,?,0)`, id, m.Generation); err != nil {
+				return err
+			}
 			if err := audit(tx, now, "user.add", u.Name, fmt.Sprintf("quota_bytes=%d", u.Quota)); err != nil {
 				return err
 			}
@@ -437,10 +492,16 @@ func (s *Store) AddUsers(users []NewUser, now time.Time) error {
 	})
 }
 
-func queueUser(tx *sql.Tx, id, generation string) error {
+func queueUser(tx *sql.Tx, id, generation string, now time.Time) error {
 	_, err := tx.Exec(`UPDATE sessions SET blocked=1,
- kick_state=CASE WHEN seen_online=1 AND online=0 THEN 'offline' ELSE 'pending' END,
- attempts=0,last_attempt=0 WHERE account_id=? AND generation=? AND blocked=0`, id, generation)
+ kick_state=CASE WHEN online=0 AND (seen_online=1 OR (has_counter=0 AND created<?)) THEN 'offline' ELSE 'pending' END,
+ attempts=0,last_attempt=0 WHERE account_id=? AND generation=? AND blocked=0`, now.Add(-2*time.Minute).UnixNano(), id, generation)
+	if err != nil {
+		return err
+	}
+	// Aging is not a new ban: never replenish attempts or erase a failure. An
+	// issued marker may still be waiting in the core and must not be duplicated.
+	_, err = tx.Exec(`UPDATE sessions SET kick_state='offline' WHERE account_id=? AND generation=? AND blocked=1 AND online=0 AND seen_online=0 AND has_counter=0 AND created<? AND kick_state='pending' AND attempts<3`, id, generation, now.Add(-2*time.Minute).UnixNano())
 	return err
 }
 
@@ -448,9 +509,11 @@ func (s *Store) Authenticate(password, generation string, now time.Time) (string
 	if len(password) < 24 || len(password) > 256 {
 		return "", ErrDenied
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var sid string
-	err := s.mutate(func(tx *sql.Tx, m Meta) error {
-		if m.Review || m.Hold || m.Generation != generation || generation == "" || m.LastSample == 0 || now.UnixNano() < m.LastSample || now.UnixNano()-m.LastSample > 30*int64(time.Second) {
+	err := s.commitLocked(func(tx *sql.Tx, m Meta) error {
+		if s.pullUnresolved || !s.deltaBaselinedLocked(m.Generation) || m.Review || m.Hold || m.Generation != generation || generation == "" || m.LastSample == 0 || now.UnixNano() < m.LastSample || now.UnixNano()-m.LastSample > 30*int64(time.Second) {
 			return ErrDenied
 		}
 		var id string
@@ -476,10 +539,10 @@ func (s *Store) Authenticate(password, generation string, now time.Time) (string
 			return ErrDenied
 		}
 		var per, total, minute int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE account_id=? AND generation=?`, id, generation).Scan(&per); err != nil {
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE account_id=? AND generation=? AND (online=1 OR (seen_online=0 AND created>?))`, id, generation, now.Add(-2*time.Minute).UnixNano()).Scan(&per); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE generation=?`, generation).Scan(&total); err != nil {
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE generation=? AND (online=1 OR (seen_online=0 AND created>?))`, generation, now.Add(-2*time.Minute).UnixNano()).Scan(&total); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE account_id=? AND created>?`, id, now.Add(-time.Minute).UnixNano()).Scan(&minute); err != nil {
@@ -494,8 +557,22 @@ func (s *Store) Authenticate(password, generation string, now time.Time) (string
 			return err
 		}
 		_, err = tx.Exec(`INSERT INTO sessions(id,account_id,generation,created) VALUES(?,?,?,?)`, sid, id, generation, now.UnixNano())
-		return err
-	})
+		if err != nil {
+			return err
+		}
+		result, err := tx.Exec(`UPDATE session_totals SET issued=issued+1 WHERE account_id=? AND generation=? AND issued<?`, id, generation, int64(math.MaxInt64))
+		if err != nil {
+			return err
+		}
+		n, err := result.RowsAffected()
+		if err != nil || n != 1 {
+			return errors.New("session issuance counter missing or exhausted; auth transaction rolled back")
+		}
+		return nil
+	}, false)
+	if err == nil {
+		s.trackOffline(sid, true, now)
+	}
 	return sid, err
 }
 
@@ -522,7 +599,7 @@ func (s *Store) ChangeUser(op, name, newName string, quota int64, now time.Time)
 			if _, err := tx.Exec(`UPDATE accounts SET disabled=1,revoked=CASE WHEN ?='revoke' THEN 1 ELSE revoked END WHERE id=?`, op, id); err != nil {
 				return err
 			}
-			if err := queueUser(tx, id, m.Generation); err != nil {
+			if err := queueUser(tx, id, m.Generation, now); err != nil {
 				return err
 			}
 		case "enable":
@@ -564,7 +641,7 @@ func (s *Store) ChangeUser(op, name, newName string, quota int64, now time.Time)
 				return err
 			}
 			if used >= quota {
-				if err := queueUser(tx, id, m.Generation); err != nil {
+				if err := queueUser(tx, id, m.Generation, now); err != nil {
 					return err
 				}
 			}
@@ -604,7 +681,7 @@ func (s *Store) ChangeUser(op, name, newName string, quota int64, now time.Time)
 			if _, err := tx.Exec(`UPDATE accounts SET digest=?,credential=? WHERE id=?`, s.digest(p), enc, id); err != nil {
 				return err
 			}
-			if err := queueUser(tx, id, m.Generation); err != nil {
+			if err := queueUser(tx, id, m.Generation, now); err != nil {
 				return err
 			}
 		default:
@@ -703,7 +780,7 @@ func (s *Store) BeginMaintenance(now time.Time) error {
 
 func (s *Store) Activate(now time.Time) error {
 	return s.mutate(func(tx *sql.Tx, m Meta) error {
-		if !eFresh(m, now) || m.Generation == "" || m.ArmUntil != 0 {
+		if s.pullUnresolved || !s.deltaBaselinedLocked(m.Generation) || !eFresh(m, now) || m.Generation == "" || m.ArmUntil != 0 {
 			return errors.New("fresh verified baseline required")
 		}
 		if _, err := tx.Exec(`UPDATE meta SET hold=0,arm_until=0 WHERE singleton=1`); err != nil {

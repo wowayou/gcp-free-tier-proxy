@@ -96,7 +96,7 @@ func TestRecoveryMustReviewSuccessfulPrepareStopTail(t *testing.T) {
 	}
 	// Existing connections are not closed by the auth hold. Their last bytes
 	// cannot be presumed zero merely because prepare-stop returned success.
-	api.shot.Traffic[id] = Counter{Tx: 60, Rx: 90}
+	api.shot.Traffic[id] = Counter{Tx: 20, Rx: 30}
 	if err := c.Collect(context.Background(), now.Add(2*time.Second)); !errors.Is(err, ErrReview) {
 		t.Fatalf("expected review hold after the final sample, got %v", err)
 	}

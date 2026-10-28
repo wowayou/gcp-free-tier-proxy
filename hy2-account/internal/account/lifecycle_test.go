@@ -99,7 +99,7 @@ func TestSessionCapacityPersistsAndOnlyRejectsOffendingAccount(t *testing.T) {
 	later := now.Add(61 * time.Second)
 	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{}, Online: map[string]int{}}, later))
 	if _, err := s.Authenticate(strings.Repeat("f", 32), "generation-1", later); !errors.Is(err, ErrDenied) {
-		t.Fatal("generation cap was only a minute rate limit")
+		t.Fatal("freshly issued live cap was only a minute rate limit")
 	}
 	if _, err := s.Authenticate(strings.Repeat("o", 32), "generation-1", later); err != nil {
 		t.Fatal("account capacity denied another account")
@@ -110,10 +110,10 @@ func TestSessionCapacityPersistsAndOnlyRejectsOffendingAccount(t *testing.T) {
 	must(t, err)
 	defer s2.Close()
 	if _, err := s2.Authenticate(strings.Repeat("f", 32), "generation-1", later); err == nil {
-		t.Fatal("controller reopen forgot generation session capacity")
+		t.Fatal("controller reopen forgot freshly issued session capacity")
 	}
 	u := user(t, s2, "friend", later)
-	if u.Sessions != 8 || !strings.Contains(u.Status, "容量耗尽") {
+	if u.Sessions != 8 || u.ActiveSessions != 8 || !strings.Contains(u.Status, "活跃连接数达到上限/拒绝新连接") {
 		t.Fatal("capacity boundary is not visible")
 	}
 }
@@ -124,7 +124,7 @@ func TestEndOfCollectionClockAndLosAngelesMonthBoundary(t *testing.T) {
 	start := time.Date(2026, 11, 1, 6, 59, 59, 0, time.UTC) // Oct 31 23:59:59 PDT.
 	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{id: {Tx: 10, Rx: 20}}, Online: map[string]int{id: 1}}, start))
 	end := start.Add(2 * time.Second)
-	api := &fakeAPI{shot: Snapshot{Traffic: map[string]Counter{id: {Tx: 17, Rx: 31}}, Online: map[string]int{id: 1}}}
+	api := &fakeAPI{shot: Snapshot{Traffic: map[string]Counter{id: {Tx: 7, Rx: 11}}, Online: map[string]int{id: 1}}}
 	c := &Collector{Store: s, API: api, Generation: func() (string, error) { return "generation-1", nil }, Clock: func() time.Time { return end }}
 	must(t, c.Collect(context.Background(), start))
 	v, err := s.View(end)
@@ -225,7 +225,7 @@ func TestCounterJSONRequiresBothFieldsAndNoNegativeOrOverflow(t *testing.T) {
 	for _, body := range []string{`null`, `{}`, `{"tx":1}`, `{"tx":1,"rx":null}`, `{"tx":-1,"rx":2}`, `{"tx":9223372036854775808,"rx":2}`, `{"tx":1,"rx":2,"extra":3}`} {
 		var n Counter
 		if json.Unmarshal([]byte(body), &n) == nil {
-			t.Fatalf("invalid cumulative record accepted: %s", body)
+			t.Fatalf("invalid delta record accepted: %s", body)
 		}
 	}
 	var n Counter

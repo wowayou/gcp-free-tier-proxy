@@ -85,8 +85,8 @@ h1,h2,h3,p{margin:0}h1{font-size:1.85rem;letter-spacing:-.04em}h2{font-size:1.2r
 {{else if .Issued}}<p class="ban-alert warning">{{.Issued}} 条踢出标记已下发，仍待确认连接关闭；不代表全部设备立即离线。</p>{{end}}
 <details><summary>查看明细与踢出进度</summary>
 <p>账本状态：{{.Status}}<br>上传 {{gib .Tx}} GiB · 下载 {{gib .Rx}} GiB · 保守补账 {{gib .Adjustment}} GiB<br>已用 {{gib .Used}} GiB · 月额度 {{gib .Quota}} GiB · 剩余 {{gib .Remaining}} GiB</p>
-<p>{{.Pending}} 待下发 · {{.Failed}} 失败 · {{.Issued}} 已下发/待确认离线 · {{.Offline}} 已观察离线</p>
-<p>本次核心运行已签发 {{.Sessions}} / {{.SessionCap}} 条会话；包括已离线会话，不是同时在线设备上限。在线数是连接实例，空闲连接可能到下一次转发才关闭。</p>
+<p>{{.Pending}} 待下发 · {{.Failed}} 失败 · {{.Issued}} 已下发/待确认离线 · {{.Offline}} 已离线或未上线已过期</p>
+<p>活跃连接 {{.ActiveSessions}} / {{.ActiveSessionCap}} 条（含刚认证的连接）；离线且持续无活动的普通会话会自动回收，仍在线的空闲连接不会因此删除。不是物理设备数限制。<br>本次核心运行累计签发 {{.Sessions}} 条会话；历史累计数只用于统计，不再决定是否接受新连接。空闲连接的踢出可能到下一次转发才生效。</p>
 </details>
 </article>
 {{else}}<p class="empty">尚无账户。由管理员在 VM 上按已批准的月额度创建，不在网页操作。</p>{{end}}

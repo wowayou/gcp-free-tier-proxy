@@ -23,8 +23,8 @@ func humanStatusFixture() account.Status {
 		Guard:       account.GuardStatus{Limit: 180 * account.GiB, Warn: 150 * account.GiB, Used: 34 * account.GiB, Healthy: true},
 		VMRemaining: 146 * account.GiB,
 		Users: []account.UserView{
-			{Name: "owner", Quota: 90 * account.GiB, Used: 81 * account.GiB, Tx: account.GiB, Adjustment: 80 * account.GiB, Remaining: 9 * account.GiB, Percent: 90, Online: 1, SessionCap: 64},
-			{Name: "friend-1", Quota: 30 * account.GiB, Remaining: 30 * account.GiB, SessionCap: 64},
+			{Name: "owner", Quota: 90 * account.GiB, Used: 81 * account.GiB, Tx: account.GiB, Adjustment: 80 * account.GiB, Remaining: 9 * account.GiB, Percent: 90, Online: 1, SessionCap: 64, ActiveSessions: 1, ActiveSessionCap: 64},
+			{Name: "friend-1", Quota: 30 * account.GiB, Remaining: 30 * account.GiB, SessionCap: 64, ActiveSessionCap: 64},
 		},
 	}
 }

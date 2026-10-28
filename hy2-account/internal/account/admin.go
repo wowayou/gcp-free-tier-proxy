@@ -175,26 +175,15 @@ func (d *Daemon) Admin(ctx context.Context, req AdminRequest, now time.Time) Adm
 func (c *Collector) CollectHeld(ctx context.Context, now time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	gen, err := c.Generation()
+	err := c.pullLocked(ctx, now, true)
 	if err != nil {
-		return errors.New("maintenance sample unavailable: preserve accounting gap")
+		c.lastFailure = err.Error()
 	}
-	snapshot, err := c.API.Read(ctx)
-	if err != nil {
-		return err
-	}
-	after, err := c.Generation()
-	if err != nil || after != gen {
-		return errors.New("core changed during maintenance sample")
-	}
-	if c.Clock != nil {
-		now = c.Clock()
-	}
-	return c.Store.applyHeld(gen, snapshot, now)
+	return err
 }
 
-// The held sample bypasses only the explicit maintenance hold/review, never
-// generation, counter or restore-witness checks. Its caller cannot authenticate.
+// The held sample requires a maintenance hold and preserves generation, review,
+// delta validation and restore-witness checks. Its caller cannot authenticate.
 func (s *Store) applyHeld(gen string, snapshot Snapshot, now time.Time) error {
 	return s.apply(gen, snapshot, now, true)
 }

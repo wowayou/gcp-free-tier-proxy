@@ -80,17 +80,17 @@ func must(t *testing.T, err error) {
 	}
 }
 
-func TestUsageCursorAtomicIdempotentAndControllerRestart(t *testing.T) {
+func TestDeltaUsageAtomicAndControllerRestart(t *testing.T) {
 	s, cfg, secrets, now := testStore(t)
 	id1, id2 := session(t, s, "friend", now), session(t, s, "friend", now)
 	shot := Snapshot{Traffic: map[string]Counter{id1: {Tx: 10, Rx: 20}, id2: {Tx: 30, Rx: 40}}, Online: map[string]int{id1: 1, id2: 1}}
 	must(t, s.Apply("generation-1", shot, now.Add(time.Second)))
-	must(t, s.Apply("generation-1", shot, now.Add(2*time.Second)))
+	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{}, Online: shot.Online}, now.Add(2*time.Second)))
 	u := user(t, s, "friend", now)
 	if u.Tx != 40 || u.Rx != 60 || u.Used != 100 {
 		t.Fatalf("wrong totals: %+v", u)
 	}
-	shot.Traffic[id1] = Counter{Tx: 20, Rx: 50}
+	shot.Traffic = map[string]Counter{id1: {Tx: 10, Rx: 30}}
 	s.beforeCommit = func() error { return errors.New("injected transaction failure") }
 	if err := s.Apply("generation-1", shot, now.Add(3*time.Second)); err == nil {
 		t.Fatal("transaction failure swallowed")
@@ -101,13 +101,13 @@ func TestUsageCursorAtomicIdempotentAndControllerRestart(t *testing.T) {
 	}
 	must(t, s.Apply("generation-1", shot, now.Add(4*time.Second)))
 	if user(t, s, "friend", now).Used != 140 {
-		t.Fatal("retry did not recover cumulative delta")
+		t.Fatal("transaction retry did not apply the uncommitted fixture delta")
 	}
 	must(t, s.Close())
 	s2, err := OpenStore(cfg, secrets, false, now.Add(5*time.Second))
 	must(t, err)
 	defer s2.Close()
-	must(t, s2.Apply("generation-1", shot, now.Add(5*time.Second)))
+	must(t, s2.Apply("generation-1", Snapshot{Traffic: map[string]Counter{}, Online: shot.Online}, now.Add(5*time.Second)))
 	if user(t, s2, "friend", now).Used != 140 {
 		t.Fatal("reopen duplicated/reset usage")
 	}
@@ -230,7 +230,7 @@ func TestMonthBoundaryAndPermanentDisableRevoke(t *testing.T) {
 	if month != "2026-11" {
 		t.Fatal(month)
 	}
-	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{id: {Tx: 510, Rx: 511}}, Online: map[string]int{}}, next))
+	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{id: {Tx: 10, Rx: 10}}, Online: map[string]int{}}, next))
 	u := user(t, s, "friend", next)
 	if u.Used != 20 || u.Exhausted || u.Disabled {
 		t.Fatal("soft quota did not roll over")
@@ -240,7 +240,7 @@ func TestMonthBoundaryAndPermanentDisableRevoke(t *testing.T) {
 	}
 	must(t, s.ChangeUser("disable", "friend", "", 0, next))
 	later := next.AddDate(0, 1, 0)
-	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{id: {Tx: 510, Rx: 511}}, Online: map[string]int{}}, later))
+	must(t, s.Apply("generation-1", Snapshot{Traffic: map[string]Counter{}, Online: map[string]int{}}, later))
 	if _, err := s.Authenticate(strings.Repeat("f", 32), "generation-1", later); err == nil {
 		t.Fatal("manual disable lost across month")
 	}
@@ -254,7 +254,7 @@ func TestMonthBoundaryAndPermanentDisableRevoke(t *testing.T) {
 }
 
 func TestCounterAnomaliesPersistReviewWithoutPartialDeltas(t *testing.T) {
-	for _, kind := range []string{"rollback", "missing", "unknown", "online-reuse", "generation", "overflow"} {
+	for _, kind := range []string{"uncertain-clear", "interrupted-pull", "unknown", "online-reuse", "generation", "overflow"} {
 		t.Run(kind, func(t *testing.T) {
 			s, _, _, now := testStore(t)
 			id := session(t, s, "friend", now)
@@ -262,10 +262,6 @@ func TestCounterAnomaliesPersistReviewWithoutPartialDeltas(t *testing.T) {
 			shot := Snapshot{Traffic: map[string]Counter{id: {Tx: 20, Rx: 20}}, Online: map[string]int{id: 1}}
 			gen := "generation-1"
 			switch kind {
-			case "rollback":
-				shot.Traffic[id] = Counter{Tx: 5, Rx: 30}
-			case "missing":
-				delete(shot.Traffic, id)
 			case "unknown":
 				shot.Traffic["unknown"] = Counter{Tx: 5}
 			case "online-reuse":
@@ -277,8 +273,19 @@ func TestCounterAnomaliesPersistReviewWithoutPartialDeltas(t *testing.T) {
 			case "overflow":
 				shot.Traffic[id] = Counter{Tx: 1 << 62, Rx: 1 << 62}
 			}
-			if err := s.Apply(gen, shot, now.Add(2*time.Second)); !errors.Is(err, ErrReview) {
-				t.Fatalf("anomaly accepted: %v", err)
+			var applyErr error
+			if kind == "uncertain-clear" || kind == "interrupted-pull" {
+				api := &fakeAPI{shot: shot, trafficErr: errors.New("post-send response lost")}
+				c := &Collector{Store: s, API: api, Generation: func() (string, error) { return gen, nil }}
+				if kind == "interrupted-pull" {
+					must(t, createPullMarker(s.cfg.Database+".pull"))
+				}
+				applyErr = c.Collect(context.Background(), now.Add(2*time.Second))
+			} else {
+				applyErr = s.Apply(gen, shot, now.Add(2*time.Second))
+			}
+			if !errors.Is(applyErr, ErrReview) {
+				t.Fatalf("anomaly accepted: %v", applyErr)
 			}
 			m, err := s.Meta()
 			must(t, err)
@@ -394,12 +401,20 @@ func TestRenameRotateTombstonesAndCapacity(t *testing.T) {
 }
 
 type fakeAPI struct {
-	shot             Snapshot
-	readErr, kickErr error
-	calls            [][]string
+	shot                         Snapshot
+	readErr, trafficErr, kickErr error
+	calls                        [][]string
+	onlineReads, trafficReads    int
 }
 
-func (f *fakeAPI) Read(context.Context) (Snapshot, error) { return f.shot, f.readErr }
+func (f *fakeAPI) ReadOnline(context.Context) (map[string]int, error) {
+	f.onlineReads++
+	return f.shot.Online, f.readErr
+}
+func (f *fakeAPI) ReadTrafficDelta(context.Context) (map[string]Counter, error) {
+	f.trafficReads++
+	return f.shot.Traffic, f.trafficErr
+}
 func (f *fakeAPI) Kick(_ context.Context, ids []string) error {
 	f.calls = append(f.calls, append([]string{}, ids...))
 	return f.kickErr
@@ -504,7 +519,7 @@ func TestHTTPPageReadOnlyAuthAndRequestBounds(t *testing.T) {
 	}
 }
 
-func TestAPIRejectsClearRedirectsNullAndLimits(t *testing.T) {
+func TestAPIDeltaOrderRejectsRedirectsNullAndLimits(t *testing.T) {
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.String())
@@ -524,20 +539,29 @@ func TestAPIRejectsClearRedirectsNullAndLimits(t *testing.T) {
 	if shot.Traffic["sid"].Tx != 1 || shot.Traffic["sid"].Rx != 2 {
 		t.Fatal("tx/rx direction changed")
 	}
-	for _, p := range paths {
-		if strings.Contains(p, "clear") {
-			t.Fatal("read cleared upstream counters")
-		}
+	if len(paths) != 2 || paths[0] != "/online" || paths[1] != "/traffic?clear=1" {
+		t.Fatalf("destructive read order changed: %v", paths)
 	}
 	for _, body := range []string{`null`, `{"sid":{"tx":-1,"rx":2}}`, strings.Repeat("x", MaxStatsBody+1)} {
-		srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = ioString(w, body) })
-		_, err = api.Read(context.Background())
-		if body == `null` && err == nil {
-			t.Fatal("null accepted")
+		bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/online" {
+				_, _ = ioString(w, `{}`)
+				return
+			}
+			_, _ = ioString(w, body)
+		}))
+		_, err = NewHTTPAPI(bad.URL, "key").Read(context.Background())
+		bad.Close()
+		if err == nil {
+			t.Fatal("invalid/null/oversized delta accepted")
 		}
-		if len(body) > MaxStatsBody && err == nil {
-			t.Fatal("response limit ignored")
-		}
+	}
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/forbidden", http.StatusFound)
+	}))
+	defer redirect.Close()
+	if _, err := NewHTTPAPI(redirect.URL, "key").Read(context.Background()); err == nil {
+		t.Fatal("local API redirect accepted")
 	}
 }
 func ioString(w http.ResponseWriter, s string) (int, error) { return w.Write([]byte(s)) }
