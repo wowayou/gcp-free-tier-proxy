@@ -18,6 +18,8 @@
 
 ## Current Architecture
 
+> **最新成功状态（2026-10-28 05:26 UTC）：schema2兼容性候选已部署、迁移与恢复成功，05:28只读复核通过。** 用户明确确认本次条件性保守补记及费用/共享额度无异常后，原recovery目录仅执行一次；owner新增1073811632 bytes、朋友0，owner当时剩27.080633 GiB，原历史补账保留。CLI/accountd v2、protocol1/schema2、二进制 `c6b418ef…02208`；认证/统计/核心健康，Reality PID未变，两个timer active，额度120/30/150、guard150/180不变，配置和secrets字节未变。旧累计JSON已恢复语义，活跃限制用独立字段。**不得重跑迁移、部署、arm或本次补账；已有原attempt和recovered回执。** 备份/阶段意图/日志位于 `/root/hy2-session-compat-v2-20261028T051040Z/`，恢复回执仍在 `/root/hy2-reclaim-20261027/recovery/attempt/`。原客户端访问未验证，详见 `STAGE-A-ACCEPTANCE.md` 第25节。下文为本次执行前历史记录，不是待执行清单。
+
 > 部署准备检查点（2026-10-28 05:10–05:15 UTC）：用户授权部署/迁移/恢复及最后Git同步后，费用属性/原账本只读核对已做，VM持久保存 `/root/hy2-session-compat-v2-20261028T051040Z/checkpoint-0001.json`。**尚未部署、迁移、arm或恢复**；候选owner1073811632/朋友0 bytes是未接受的条件性建议，原review仍null。所列预算无Pub/Sub、同账单有2项目且另一项目当前无VM，仍不能证明当月实际费用与历史共享额度。等待一次集中确认，窗口05:40:40 UTC到期、预留5分钟收尾；过期不继续。详见 `STAGE-A-ACCEPTANCE.md` 第24节，不自动写0/重放旧增量，不重跑phase1/phase2。
 
 > 最新只读现场核对（2026-10-28 05:05 UTC，用户明确允许直接连接）：单次本地 Windows gcloud/IAP SSH、严格主机校验通过。HY2 inactive/masked、accountd/Reality active、两个保护 timer active；schema1，witness一致，owner保留512条、朋友0，与原停机前累计记录一致；无pull/delta遗留、原recovery/attempt不存在、审核增量仍全部null。guard健康、整机50.737917/180 GiB，owner剩28.080698 GiB，朋友30 GiB；历史补账未变。**本次只读，没有迁移、部署、补账、arm或启动HY2；新schema2候选仍未发布。** 详细记录见 `STAGE-A-ACCEPTANCE.md` 第23节。用户授权直接管理通道只限此次核对，不代表允许新预算/资源或默认零补账。

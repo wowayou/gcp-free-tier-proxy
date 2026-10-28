@@ -10,9 +10,11 @@ Cloudflare 小黄云、Argo、WARP、CDN 回源。
 > **原公网客户端实际访问、最终只读核验与临时凭据清理均通过，本次单账户迁移收尾完成**；详细证据与未演练项见 `STAGE-A-ACCEPTANCE.md` 第 11 节。
 > 下文迁移命令供经授权的安装/维护使用，不要在已迁移 VM 上从头重跑；任何新切换仍需明确授权和维护窗口。
 
-## 本次恢复状态（2026-10-28）
+## 本次恢复状态（2026-10-28，已完成）
 
-2026-10-28 05:05 UTC，用户允许直接连接后单次只读核对：HY2 inactive/masked，accountd 与 Reality active，两个保护timer active；schema1/witness正常，owner512/朋友0条历史会话完整，原恢复无attempt、审核值仍null。guard为50.737917/180 GiB且未拦截。**后续本地修复、旧 JSON 口径恢复和真实核心功能复测通过，schema 2 新候选尚未部署；本次未写补账或恢复。** 第20–21节保留此前问题，兼容性验收见 `STAGE-A-ACCEPTANCE.md` 第22节，本次现场见第23节。旧 r3 恢复成功记录不是本次的启动许可。
+用户明确接受owner新增1073811632 bytes、朋友0的条件性保守补记及当前费用/共享额度无异常后，05:26 UTC部署、schema2迁移、原目录单次受控恢复成功；05:28只读复核：`auth=true / healthy=true / core_live=true`，错误字段为空，Reality PID不变、两个保护timer active、配置与secrets字节不变。owner120/朋友30/池150 GiB及guard150/180不变，owner当时剩27.080633 GiB。二进制 `c6b418ef…02208`、schema2/protocol1，迁移审计1条、本窗口arm1条。新代次累计会话归0是正常基线切换，不是清除历史用量。
+
+**本次已提交，不得重跑部署、迁移、恢复或1073811632-byte增量。** 原恢复回执 `/root/hy2-reclaim-20261027/recovery/attempt/` 和私密备份/意图/日志 `/root/hy2-session-compat-v2-20261028T051040Z/` 保留。本人/朋友沿用原链接与密码；真实公网客户端访问仍待一次小网页确认。完整证据见 `STAGE-A-ACCEPTANCE.md` 第25节，下文停机阶段说明和迁移命令是历史/将来另行授权的操作口径，不是当前待执行清单。
 
 - 不执行已上传的 `/tmp/phase2.sh`。它预置 owner/朋友各 0 字节，并且用 `|| true` 吞掉恢复命令的非零退出；不能把脚本返回成功当作恢复成功。
 - 不重跑 phase1，不删除 `/root/hy2-reclaim-20261027/recovery/` 或任何 attempt。后续先从授权的管理通道只读核对版本、服务状态、完整账户账本、before/review/attempt，再决定配套修复和恢复。
@@ -37,9 +39,9 @@ CLI只读验证HY2 inactive/failed；数据锁排除仍在运行的accountd。�
 
 迁移成功后再有限启动新accountd并核对用量/凭据/计数保持，随后按既有助手审核本次**新增字节**并单次恢复至新核心代次。迁移和流量补账是两件事，任何次数或字节都不能相互替代。常规serve拒绝schema 1，不自动升级；重复迁移拒绝。失败或超时先核对schema/witness/审计，不重跑、不回退旧库，不删除表或改版本。schema 2 库会被旧二进制拒绝，不能只把旧程序拷回去冒充回滚。
 
-### 本次执行检查点（2026-10-28）
+### 本次执行检查点（2026-10-28，历史与最终记录）
 
-用户已授权部署/迁移/恢复，但本次新增数值仍未接受。VM检查点 `/root/hy2-session-compat-v2-20261028T051040Z/checkpoint-0001.json` 已私密写入并同步磁盘，记录原恢复目录、候选哈希、null审核值和全部未执行的写操作。费用只读核对确认Standard/e2-micro/pd-standard30GiB；同账单另一项目当前无VM不等于无历史共享占用，所列预算无Pub/Sub也不是硬封顶。现场和未接受的条件性建议见 `STAGE-A-ACCEPTANCE.md` 第24节。原恢复目录继续保留，当前没有新attempt，不把这个检查点目录当作绕过旧attempt的工具。
+最初 `checkpoint-0001.json` 记录null审核值和未执行状态，后来用户已明确接受并按单次流程提交；不能只读取最早检查点就误判尚未执行。`step-accepted.json`、每步写前intent、`step-migration-committed.json`、`step-recovered.json`、私密日志与备份均保存；恢复助手在**原**recovery目录持久写入attempt/arm-returned-ok/recovered，不新建恢复目录绕过回执。费用属性由API核对，当前费用/历史共享额度无异常由操作者确认，不冒称从预算接口读到精确结算账单。
 
 ### 精简确认流程与预算告警
 

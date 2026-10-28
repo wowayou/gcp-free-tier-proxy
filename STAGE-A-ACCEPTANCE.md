@@ -688,4 +688,37 @@ NumPy 提示只是 IAP 隧道上传性能建议，不是这次交付失败，也
 
 按用户要求，在VM创建0700目录 `/root/hy2-session-compat-v2-20261028T051040Z/`，用O_EXCL写0600 `checkpoint-0001.json`，fsync文件与目录，SSH正常返回 `DURABLE_CHECKPOINT`。记录授权范围/截止时间、原恢复目录、候选哈希、计数512/0、逐账户审核值null、未接受的数值建议、费用核对边界及各写操作false。该目录不是新的recovery/attempt，不替代或绕过原审核材料；原attempt不存在已先检查。
 
-**当前结果：仅费用/证据读取及检查点写入完成，deployment=false / migration=false / arm=false / recovery=false。** 未上传新程序，未启停服务、改额度或保护，未调用原phase1/phase2或恢复命令；待一次集中确认。窗口到期则保持HY2停止，不复用过期授权。代码与此状态可先同步Git，恢复结果后续追加，不能把源代码推送当作部署成功。
+**该检查点阶段的结果：仅费用/证据读取及检查点写入完成，deployment=false / migration=false / arm=false / recovery=false。** 当时未上传新程序，未启停服务、改额度或保护，未调用原phase1/phase2或恢复命令；待一次集中确认。窗口到期则保持HY2停止，不复用过期授权。代码与此状态先以 `a178597d26f21307902c56219dc9f9f90a68ec19` 推送至origin/main，远端一致、工作区干净。后续明确确认及成功恢复见下一节，不以最早检查点误判当前状态。
+
+## 25. 明确确认后部署、schema2迁移及恢复成功（2026-10-28 05:26 UTC）
+
+用户回贴“确认”，接受owner新增1073811632 bytes、朋友0及条件性估计的不确定性，并确认当前账单/共享额度无异常。该金额是本次经接受的保守补记，不是实测漏账；不能作为下次维护默认金额。原授权窗口05:10:40–05:40:40 UTC，预留5分钟收尾，实际05:26:24恢复完成，没有使用过期窗口。
+
+### 执行与持久化
+
+- 只上传本地已测配套账户二进制和一次性执行器，不替换固定官方核心/恢复助手、证书、配置或secrets。账户程序SHA-256 `c6b418ef3b771a222f01117d27cbdeeabffdffaa480b8855da19109e7af02208`，源码对应 `a178597…` 中账户模块（逐文件与构建清单一致）。
+- 执行器使用4个隔离fixture验证：成功完整流程、迁移已提交后超时不重试且不恢复、恢复不确定仅一次且保留attempt、已有attempt在任何写操作前拒绝；均PASS。fixture仅临时路径、fake命令和状态，不调用系统服务。最终执行器补充TERM/INT异常收尾，SHA-256 `45a671680e3073e120b184ea13f42f523a59556c54a9f4f2bbd2f2b55baad50d`；从已校验上传件在root私密路径发布该同哈希版本后才运行。
+- VM内root私密目录 `/root/hy2-session-compat-v2-20261028T051040Z/`：授权接受、每步写前intent、部署日志、离线备份及其校验、迁移已提交、accountd就绪、recovery意图、recovered等均以O_EXCL/0600写入并fsync文件/目录。目录0700；SSH断开不重跑，后台任务单次360秒上限。
+- 先调用旧 `system backup` 一次，再在同一persistent control lock下停止accountd，复制停止后的DB/WAL/SHM（存在时）、witness、配置、secrets和旧二进制至私密离线备份。不清库/删锁/停timer；该锁阻止旧health进程把先前决定带过更新。
+- 已审阅计数owner512/朋友0写入数据属主私密文件，原子发布新程序，以 `hy2-account` 数据属主执行迁移一次。schema2提交后核对witness、完整用量/额度/flags和累计512/0保持；启动新accountd一次并有限等待就绪，配置/secrets校验一致。
+- 释放同一control lock后，写入本次已接受review，调用原 `/root/hy2-reclaim-20261027/recovery/` 的恢复助手execute **一次**，不新建目录绕过原回执、不prepare覆盖原材料。助手保留attempt/charges、arm-returned-ok与recovered回执。所有变更的非零结果都停止核对，无自动重放或回滚；未执行旧phase1/phase2。
+
+### 05:26成功与05:28只读复核
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 新程序 | `hy2-account 2 ... recovery-protocol=1 schema=2`，二进制SHA-256与候选一致 |
+| 恢复 | `COMPAT_V2_RECOVERED auth=true healthy=true core_live=true`，review/hold解除、shared_health_blocked=false，vm/stats/certificate/data错误为空 |
+| 数据库 | user_version=2，quick_check=ok，迁移审计1条，本次窗口system.arm审计1条 |
+| 本次增量 | owner1073811632 bytes、朋友0；旧88165004800 adjustment保留，owner新adjustment=89238816432 bytes，未重复旧34GiB/50584038211/r3增量 |
+| 用量/余额 | owner used=99771411129、remaining=29077607751 bytes（27.080633 GiB）；朋友used=0、remaining=32212254720 bytes（30 GiB） |
+| 额度与凭据 | owner120/朋友30/池150不变，配置与secrets字节校验未变，未rotate/重建账户，朋友沿用原链接 |
+| 会话计数 | 迁移时累计512/0保持；新核心空基线后累计0/0、活跃0/0，属于换代而非历史用量丢失；活跃上限512/账户、总2048维持，不设409600/819200 |
+| 服务 | accountd PID1586492、HY2服务MainPID1586635（核心子进程1586648），Reality PID1493733在本窗口未变；服务均active、NRestarts=0 |
+| 端口/权限 | 官方hysteria拥有443/udp；47370/tcp存在；18081/18082/18083均只监听127.0.0.1；收尾目录0700、成功回执0600 |
+| 流量保护 | 两个timer active；guard健康/未拦截，used=54706014272 bytes（50.948946 GiB），150/180 GiB及双服务覆盖不变 |
+| 资源快照 | accountd MemoryCurrent=12460032、HY2服务13062144 bytes，均为空闲状态快照，不代表长期负载资源保证 |
+| 回执 | 原attempt内charges.json/review.json/arm-returned-ok.json/recovered.json均存在，charges精确为本次已接受值 |
+| 客户端访问 | 本窗口没有使用真实凭据额外造流量、测速或改本机客户端；原公网客户端实际访问仍需用户一次小网页确认，服务端就绪不冒称已验证 |
+
+**本次服务端部署/迁移/恢复成功，不重跑本次任何写步骤或补账。** 完成最后只读状态核验后，VM另以O_EXCL/0600写入并fsync `final-closeout.json`（含当时状态、已接受增量、源码/二进制标识、客户端未验证及禁止重放说明），正常返回 `FINAL_CLOSEOUT_PERSISTED / auth=true healthy=true core_live=true`。保留所有备份、意图、审核、attempt及recovered材料；之后仅把收尾记录追加并推送同步，不开始可选清理、面板、资源或协议变更。已知清零响应丢失/VM或核心故障仍需审核，不声称永久零维护。
