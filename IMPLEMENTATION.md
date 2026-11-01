@@ -12,7 +12,7 @@ Cloudflare 小黄云、Argo、WARP、CDN 回源。
 
 ## 最新恢复（2026-11-01，已完成）
 
-2026-11-01 07:00:04 UTC 月份切换时 `hy2-health` 因 guard 状态文件月份尚未刷新而停服；07:55 经用户明确授权以 owner 0/朋友 0（放弃尾差审核，未测量）在 `/root/hy2-restore-20261101/recovery/` 单次恢复成功，不得重跑。原客户端已确认可访问。切月误停修复 `8bf4903`（二进制 `21ce4893…6f9f`）09:27 经 prepare-stop、替换和 `/root/hy2-guard-rollover-20261101/recovery/` 0/0 单次恢复上线，不得重跑；真实切月效果待 2026-12-01 08:00 UTC 验证。见 `STAGE-A-ACCEPTANCE.md` 第27节。证据见 `STAGE-A-ACCEPTANCE.md` 第26节。
+2026-11-01 07:00:04 UTC 月份切换时 `hy2-health` 因 guard 状态文件月份尚未刷新而停服；07:55 经用户明确授权以 owner 0/朋友 0（放弃尾差审核，未测量）在 `/root/hy2-restore-20261101/recovery/` 单次恢复成功，不得重跑。原客户端已确认可访问。切月误停修复 `8bf4903`（二进制 `21ce4893…6f9f`）09:27 经 prepare-stop、替换和 `/root/hy2-guard-rollover-20261101/recovery/` 0/0 单次恢复上线，部署后客户端访问已确认，不得重跑；真实切月效果待 2026-12-01 08:00 UTC 验证。见 `STAGE-A-ACCEPTANCE.md` 第27节。证据见 `STAGE-A-ACCEPTANCE.md` 第26节。
 
 ## 上次恢复状态（2026-10-28，已完成）
 

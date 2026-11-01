@@ -756,4 +756,4 @@ NumPy 提示只是 IAP 隧道上传性能建议，不是这次交付失败，也
 - 结果：09:27:22 accepted/prepare-stop/核心停止，09:27:23 二进制发布，09:27:24 accountd 就绪，09:27:29 `ROLLOVER_FIX_RECOVERED auth=true healthy=true core_live=true`；HY2 中断约 7 秒。attempt 内 charges/review/arm-returned-ok/recovered 齐全。
 - 09:30 只读复核：healthy/core_live/authentication_allowed=true，shared_health_blocked=false，错误字段为空，采样延迟 2.4 秒；已装二进制哈希为新值；hysteria MainPID 2186770、accountd 2186634（均 NRestarts=0），Reality PID 2122539 未变；443/udp 由 hysteria 监听；两个 timer active；hy2-health 3 分钟内无报错。额度 120/30/150 GiB、guard 150/180 GiB 未改；adjustment 仍为 0。
 
-**不得重跑本次部署或复用该 attempt。** 修复在真实切月下的效果要到 2026-12-01 08:00 UTC 才能验证；部署后客户端访问未另行确认。
+**不得重跑本次部署或复用该 attempt。** 修复在真实切月下的效果要到 2026-12-01 08:00 UTC 才能验证；部署后用户回贴原客户端可打开网页；本次维护结案。
