@@ -208,6 +208,27 @@ type GuardStatus struct {
 	Services []string `json:"services"`
 }
 
+// guardStaleSeconds bounds how old the guard status may be. The guard writes it
+// at most every 60 s, so the same bound also covers the month rollover.
+const guardStaleSeconds = 180
+
+// guardMonthOK accepts the current billing month, or the previous month only
+// while that file is still the guard's last pre-rollover write: written before
+// the new month started and now within guardStaleSeconds of that start. The
+// guard only learns the new month on its next tick (up to 60 s later); its
+// previous-month total is never lower than the reset new-month total, and all
+// blocked/health/limit checks still apply.
+func guardMonthOK(g GuardStatus, now time.Time) bool {
+	month, _ := billingTime(now)
+	if g.Month == month {
+		return true
+	}
+	local := now.In(billingLocation)
+	start := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, billingLocation)
+	previous, _ := billingTime(start.Add(-time.Second))
+	return g.Month == previous && g.Updated < start.Unix() && now.Unix()-start.Unix() <= guardStaleSeconds
+}
+
 func ReadGuard(path string, now time.Time) (GuardStatus, error) {
 	var g GuardStatus
 	f, err := os.Open(path)
@@ -218,8 +239,7 @@ func ReadGuard(path string, now time.Time) (GuardStatus, error) {
 	if err := DecodeJSON(f, &g, 4096); err != nil {
 		return g, err
 	}
-	month, _ := billingTime(now)
-	if g.Month != month || g.Used < 0 || g.Limit <= 0 || g.Limit > 180*GiB || g.Warn < 0 || g.Warn >= g.Limit || now.Unix()-g.Updated > 180 || g.Updated > now.Unix()+5 {
+	if !guardMonthOK(g, now) || g.Used < 0 || g.Limit <= 0 || g.Limit > 180*GiB || g.Warn < 0 || g.Warn >= g.Limit || now.Unix()-g.Updated > guardStaleSeconds || g.Updated > now.Unix()+5 {
 		return g, errors.New("VM guard status is stale/invalid")
 	}
 	covered := map[string]bool{}

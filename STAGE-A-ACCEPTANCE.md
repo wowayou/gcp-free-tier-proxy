@@ -722,3 +722,27 @@ NumPy 提示只是 IAP 隧道上传性能建议，不是这次交付失败，也
 | 客户端访问 | 本窗口没有使用真实凭据额外造流量、测速或改本机客户端；原公网客户端实际访问仍需用户一次小网页确认，服务端就绪不冒称已验证 |
 
 **本次服务端部署/迁移/恢复成功，不重跑本次任何写步骤或补账。** 完成最后只读状态核验后，VM另以O_EXCL/0600写入并fsync `final-closeout.json`（含当时状态、已接受增量、源码/二进制标识、客户端未验证及禁止重放说明），正常返回 `FINAL_CLOSEOUT_PERSISTED / auth=true healthy=true core_live=true`。保留所有备份、意图、审核、attempt及recovered材料；之后仅把收尾记录追加并推送同步，不开始可选清理、面板、资源或协议变更。已知清零响应丢失/VM或核心故障仍需审核，不声称永久零维护。
+
+## 26. 月份切换误停与零补记恢复（2026-11-01 UTC）
+
+### 故障
+
+- 07:00:04 UTC（洛杉矶切到 2026-11）`hy2-health` 停止并 mask `hysteria-server`，写入持久 health 锁；之后每 6 秒报 `HY2 held stopped for shared accounting/guard fault`。accountd、Reality、两个保护 timer 未受影响，guard 健康未拦截。
+- 原因（日志时序 + 源码）：guard timer 每 60 秒写一次 `/run/gcp-egress-guard/status.json`（06:59:16、07:00:16）；`ReadGuard` 要求文件月份等于当前洛杉矶月份。07:00:00–07:00:16 文件仍为 2026-10，07:00:04 的 health run 判为 `VM guard status is stale/invalid`，进入 `stopForSharedHealth`。这是迁移后第一次跨月，**每月都会重现**（下次 2026-12-01 08:00 UTC），代码加固留待下一轮。
+- 此前用户反映的偶发断连：07:00 前 48 小时 hysteria 无停止/重启记录，与本次停机无关，原因未查清。日志中有大量 `dial tcp6 ... network is unreachable`（VM 无 IPv6 出口），影响未验证。
+
+### 恢复（用户明确授权，跳过尾差审核）
+
+- 用户明确要求立即恢复、不审核停机前尾差、不补记。本地 Windows gcloud 经 IAP SSH（严格主机校验）执行；VM `hy2-recover` 与仓库 `recover-hy2.py` 哈希前缀 `5bdc39c1…` 一致，CLI `hy2-account 2 … recovery-protocol=1 schema=2`。旧 `hy2-closeout-20261023T093602Z` 临时单元为 failed、其检查的旧 recovered.json 存在。
+- 07:52 新目录 `/root/hy2-restore-20261101/recovery/` 执行 prepare（11 月账本无 review/hold，owner used 44698 bytes、朋友 0）；review 写 owner 0、朋友 0，reason 注明“用户放弃尾差审核，0/0 是接受的未测量值，不是零尾差证据”。最后采样 07:00:03.86，停机 07:00:04.29，缺口约 0.4 秒，但未实测。
+- 07:55:14 单次 `hy2-recover execute`（setsid + 170 秒上限）5 秒内返回 `RECOVERED auth=true healthy=true core_live=true`；attempt 内 charges/review/arm-returned-ok/recovered 回执齐全，另有 `intent-execute.json`。
+- 07:59 只读复核：healthy/core_live/authentication_allowed 为 true，shared_health_blocked=false，错误字段为空，采样延迟 0.8 秒；hysteria 新 MainPID 2177488、NRestarts=0、443/udp 由 hysteria 监听；Reality PID 2122539 与 accountd PID 1586492 未变；两个 timer active；hy2-health 3 分钟内无报错。额度 120/30/150 GiB、guard 150/180 GiB 未改。
+
+**不得重跑本次恢复或复用该 attempt。** 用户回贴原客户端可以实际访问。
+
+## 27. 切月 guard 文件滞后的代码修复（2026-11-01，本地 PASS，部署另见下文）
+
+- 修复：`ReadGuard` 新增 `guardMonthOK`。除当前洛杉矶月份外，仅当文件为上一月、`updated` 早于本月起点、且当前距本月起点不超过 180 秒时接受；新鲜度（180 秒）、未来时间、额度、blocked/healthy、双服务覆盖检查全部不变。上一月累计不低于新月归零后的累计，不放宽额度判断。accountd 的 status/health 见证、认证、arm/activate 与 `health run/gate` 共用同一函数，一并生效。
+- 回归：新增 `guard_month_test.go` 3 项（PDT 事故时刻、PST 12 月、跨年的切月接受；切月后写入的旧月、两月前、未来月、blocked、月中旧标签拒绝；accountd Status 切月无 guard 错误）。旧代码上 2 项失败（复现 `VM guard status is stale/invalid`），保持性检查新旧代码均通过。
+- 实际执行：本地新装 Go 1.27.3（官方 SHA-256 校验）、按 `download-hysteria-release.sh` 单次下载固定核心并校验；`GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local`。`gofmt -l .` 无输出；`go vet ./...`；`HY2_BIN=<核心> go test -race -count=1 -timeout=8m ./...` 两包 PASS（未加 `-short`，含 3 个真实核心测试，另以 `-v` 确认 3 项 PASS 未跳过）；`python3 -m unittest tests.test_recover_hy2 tests.test_egress_guard` 51 项 PASS；`git diff --check` 通过。
+- 未覆盖：真实 systemd 计时器下的切月时序未演练；下一次真实切月为 2026-12-01 08:00 UTC。版本串、协议 1、schema 2 未变，用二进制哈希区分。
