@@ -746,3 +746,14 @@ NumPy 提示只是 IAP 隧道上传性能建议，不是这次交付失败，也
 - 回归：新增 `guard_month_test.go` 3 项（PDT 事故时刻、PST 12 月、跨年的切月接受；切月后写入的旧月、两月前、未来月、blocked、月中旧标签拒绝；accountd Status 切月无 guard 错误）。旧代码上 2 项失败（复现 `VM guard status is stale/invalid`），保持性检查新旧代码均通过。
 - 实际执行：本地新装 Go 1.27.3（官方 SHA-256 校验）、按 `download-hysteria-release.sh` 单次下载固定核心并校验；`GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local`。`gofmt -l .` 无输出；`go vet ./...`；`HY2_BIN=<核心> go test -race -count=1 -timeout=8m ./...` 两包 PASS（未加 `-short`，含 3 个真实核心测试，另以 `-v` 确认 3 项 PASS 未跳过）；`python3 -m unittest tests.test_recover_hy2 tests.test_egress_guard` 51 项 PASS；`git diff --check` 通过。
 - 未覆盖：真实 systemd 计时器下的切月时序未演练；下一次真实切月为 2026-12-01 08:00 UTC。版本串、协议 1、schema 2 未变，用二进制哈希区分。
+
+### 部署（2026-11-01 09:27 UTC，用户授权“验收通过后部署”）
+
+- 构建：干净工作树 `8bf4903` 静态 linux/amd64（Go 1.27.3，`vcs.modified=false`），SHA-256 `21ce4893fc7566ca2ee19d317733962b95c9435e8ecb62a135013ec2429fcfa9`；一次性执行器 `deploy-once.py` SHA-256 `cc7c2833…15497`，二者保存在仓库外 `gcp-free-tier-proxy-releases/hy2-guard-rollover-8bf4903-linux-amd64/`。经 IAP scp 上传（VM 入站），VM 上核对哈希后放入 0700 目录 `/root/hy2-guard-rollover-20261101/`。
+- 执行器（setsid，240 秒上限，每步写前 O_EXCL/0600 持久化）：核对旧二进制 `c6b418ef…`、恢复助手、固定核心哈希 → 在线 backup → prepare-stop（当时 online=1）→ 停核心 → 同一持久控制锁下停 accountd、离线备份 DB/witness/config/secrets/旧二进制 → 原子替换 → 启动 accountd → 核对账本/配置/secrets 未变 → 新 recovery 目录 prepare，charges owner 0/朋友 0 → `hy2-recover execute` 一次。没有 schema 变化或迁移。
+- 0/0 依据：用户已在本日明确放弃尾差审核并要求验收后继续部署；代理按同一授权延伸到这次计划停机，reason 中写明“接受的未测量值，不是零尾差证据”。prepare-stop 先关新认证并采最终样本，停核心同一秒内完成，但既有连接尾差未测。
+- SSH 会话在启动后断开（plink rc=1），执行器已脱离会话继续；未重跑，重连只读核对。
+- 结果：09:27:22 accepted/prepare-stop/核心停止，09:27:23 二进制发布，09:27:24 accountd 就绪，09:27:29 `ROLLOVER_FIX_RECOVERED auth=true healthy=true core_live=true`；HY2 中断约 7 秒。attempt 内 charges/review/arm-returned-ok/recovered 齐全。
+- 09:30 只读复核：healthy/core_live/authentication_allowed=true，shared_health_blocked=false，错误字段为空，采样延迟 2.4 秒；已装二进制哈希为新值；hysteria MainPID 2186770、accountd 2186634（均 NRestarts=0），Reality PID 2122539 未变；443/udp 由 hysteria 监听；两个 timer active；hy2-health 3 分钟内无报错。额度 120/30/150 GiB、guard 150/180 GiB 未改；adjustment 仍为 0。
+
+**不得重跑本次部署或复用该 attempt。** 修复在真实切月下的效果要到 2026-12-01 08:00 UTC 才能验证；部署后客户端访问未另行确认。

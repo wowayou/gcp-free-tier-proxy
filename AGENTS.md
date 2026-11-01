@@ -18,7 +18,7 @@
 
 ## Current Architecture
 
-> **最新状态（2026-11-01 07:59 UTC）：HY2 已恢复运行。** 07:00:04 洛杉矶切月时 guard 状态文件最多滞后 60 秒，`hy2-health` 判 guard 月份不符而停服/mask（代码已在本地修复并验收，见第27节；部署前每月仍会重现，下次 2026-12-01 08:00 UTC）。用户明确放弃尾差审核，07:55 在新目录 `/root/hy2-restore-20261101/recovery/` 以 owner 0/朋友 0（接受的未测量值，不是零尾差证据）单次 `hy2-recover execute` 成功，回执齐全；**不得重跑或复用该 attempt。** 原客户端已确认可访问。Reality/accountd PID 未变，额度与 guard 未改。详见 `STAGE-A-ACCEPTANCE.md` 第26节。下一条为更早的历史记录。
+> **最新状态（2026-11-01 09:30 UTC）：切月误停修复已部署，HY2 运行中。** 07:00:04 洛杉矶切月时 guard 状态文件最多滞后 60 秒，`hy2-health` 判 guard 月份不符而停服/mask；07:55 用户放弃尾差审核以 0/0 在 `/root/hy2-restore-20261101/recovery/` 恢复，原客户端已确认可访问。`8bf4903` 修复（`ReadGuard` 在切月后 180 秒内接受上一月最后一次写入，其余检查不变），二进制 `21ce4893…6f9f`（版本串/协议1/schema2 不变）09:27 经 prepare-stop→替换→`/root/hy2-guard-rollover-20261101/recovery/` 0/0 单次恢复上线，中断约 7 秒。**两个目录的 attempt 都不得重跑或复用。** Reality PID 未变，额度与 guard 未改；真实切月效果待 2026-12-01 08:00 UTC 验证。详见 `STAGE-A-ACCEPTANCE.md` 第26–27节。下一条为更早的历史记录。
 
 > **上次成功状态（2026-10-28 05:26 UTC）：schema2兼容性候选已部署、迁移与恢复成功，05:28只读复核通过。** 用户明确确认本次条件性保守补记及费用/共享额度无异常后，原recovery目录仅执行一次；owner新增1073811632 bytes、朋友0，owner当时剩27.080633 GiB，原历史补账保留。CLI/accountd v2、protocol1/schema2、二进制 `c6b418ef…02208`；认证/统计/核心健康，Reality PID未变，两个timer active，额度120/30/150、guard150/180不变，配置和secrets字节未变。旧累计JSON已恢复语义，活跃限制用独立字段。**不得重跑迁移、部署、arm或本次补账；已有原attempt和recovered回执。** 备份/阶段意图/日志位于 `/root/hy2-session-compat-v2-20261028T051040Z/`，恢复回执仍在 `/root/hy2-reclaim-20261027/recovery/attempt/`。原客户端访问未验证，详见 `STAGE-A-ACCEPTANCE.md` 第25节。下文为本次执行前历史记录，不是待执行清单。
 
