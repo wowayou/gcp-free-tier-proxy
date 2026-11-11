@@ -1,6 +1,6 @@
 # Google Cloud 免费层代理节点最终维护手册
 
-更新时间：2026-10-28
+更新时间：2026-11-11
 
 这份手册是当前项目的维护口径：Google Cloud 免费层 VM 用于受限代理，不做全局代理，不走
 Cloudflare 小黄云、Argo、WARP、CDN 回源。
@@ -96,9 +96,9 @@ CLI只读验证HY2 inactive/failed；数据锁排除仍在运行的accountd。�
 - 免费 VM 区域只选 `us-west1`、`us-central1`、`us-east1`。
 - 机器类型只用 `e2-micro`。
 - 启动盘只用 `pd-standard`，大小不超过 `30GB`。
-- IPv4 + Standard Tier 方案不是 0 美元：外部 IPv4 本身会产生基础费用。
-- Standard Tier 200 GiB/月不要贴满使用，本项目用 `180 GiB` 做 VM 内软熔断。
-- 预算提醒只是通知，不是硬上限；真正防止流量继续跑的是 `install-egress-guard.sh`。
+- IPv4 与网络出站可能产生费用，不能承诺 0 美元。本次 11 月费用样本的 IPv4 净额为零，但 Carrier Peering 已收费；不要无依据额外加算 IPv4，也不要推定未来永久免收。
+- Standard Tier 定价页当前列 200 GiB/月跨区域共享，概览页却列每区域/每 SKU 200 GB；差异未澄清前不扩大额度。本项目仍用 `180 GiB` 做 VM 内软熔断，但这不是其他网络 SKU 的免费保证。
+- 预算提醒只是通知，不是硬上限；`install-egress-guard.sh` 限制的是受保护代理的采样出站量，不是美元费用封顶。费用估算与本次结案见 [调查记录第12节](gcp-billing/INVESTIGATION-PLAN.md#12-费用估算与最终结案决定2026-11-11)。
 
 ## 文件说明
 
@@ -723,6 +723,8 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18082:127.0.0.1:18082 YOUR_EXIST
 ## 日常维护与故障排查
 
 本节是迁移后的运维入口，首次安装命令不是修复命令。**默认只读、按需执行，不新增 cron/timer、云 API 轮询或收费监控。** 本次验收范围及现场未覆盖项见 `STAGE-A-ACCEPTANCE.md` 第 11–12 节。
+
+Carrier Peering 意外费用的证据分级、有限调查与验收门禁见 [费用调查方案与结案记录](gcp-billing/INVESTIGATION-PLAN.md)（2026-11-11，用户决定暂不实施限制；保留方案不是待执行清单）。Standard Tier 的 peering 路径不能直接等同于收费 SKU；不依据客服 ASN 示例封网，不自动开启 Flow Logs 或部署中转。
 
 ### 日常检查与判读
 

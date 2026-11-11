@@ -18,6 +18,8 @@
 
 ## Current Architecture
 
+> **最近调查结案（2026-11-11）：Carrier Peering 费用只读调查结束，用户决定暂不限制或改分流。** 原账单该 SKU 12.58 GiB/$1.006009，按前十天速度条件估算整月约 $3.02，不保证低于 $5。一次 IAP/SSH、10 组被动观察完成；客户端存在 GCP 通用兜底、`ai-proxy` 未引用，但具体收费网络及客服调价/ASN 说法未证实。**未改服务端/客户端、配额120/30/150或guard150/180，未开日志/中转，不自动续跑调查或部署草案。** 末次 VM 观测为 07:34 UTC，核心/账户/Reality与双保护检查通过；不是后续实时健康保证。详细证据、私密材料位置及结案决定见 `gcp-billing/INVESTIGATION-PLAN.md` 第9–12节；原CSV只留本地。下方为最近部署及更早历史记录。
+
 > **最新状态（2026-11-01 09:30 UTC）：切月误停修复已部署，HY2 运行中。** 07:00:04 洛杉矶切月时 guard 状态文件最多滞后 60 秒，`hy2-health` 判 guard 月份不符而停服/mask；07:55 用户放弃尾差审核以 0/0 在 `/root/hy2-restore-20261101/recovery/` 恢复，原客户端已确认可访问。`8bf4903` 修复（`ReadGuard` 在切月后 180 秒内接受上一月最后一次写入，其余检查不变），二进制 `21ce4893…6f9f`（版本串/协议1/schema2 不变）09:27 经 prepare-stop→替换→`/root/hy2-guard-rollover-20261101/recovery/` 0/0 单次恢复上线，中断约 7 秒，部署后原客户端已确认可打开网页，本次维护结案。**两个目录的 attempt 都不得重跑或复用。** Reality PID 未变，额度与 guard 未改；真实切月效果待 2026-12-01 08:00 UTC 验证。详见 `STAGE-A-ACCEPTANCE.md` 第26–27节。下一条为更早的历史记录。
 
 > **上次成功状态（2026-10-28 05:26 UTC）：schema2兼容性候选已部署、迁移与恢复成功，05:28只读复核通过。** 用户明确确认本次条件性保守补记及费用/共享额度无异常后，原recovery目录仅执行一次；owner新增1073811632 bytes、朋友0，owner当时剩27.080633 GiB，原历史补账保留。CLI/accountd v2、protocol1/schema2、二进制 `c6b418ef…02208`；认证/统计/核心健康，Reality PID未变，两个timer active，额度120/30/150、guard150/180不变，配置和secrets字节未变。旧累计JSON已恢复语义，活跃限制用独立字段。**不得重跑迁移、部署、arm或本次补账；已有原attempt和recovered回执。** 备份/阶段意图/日志位于 `/root/hy2-session-compat-v2-20261028T051040Z/`，恢复回执仍在 `/root/hy2-reclaim-20261027/recovery/attempt/`。原客户端访问未验证，详见 `STAGE-A-ACCEPTANCE.md` 第25节。下文为本次执行前历史记录，不是待执行清单。
